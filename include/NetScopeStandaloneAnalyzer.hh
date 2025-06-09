@@ -5,6 +5,7 @@
 #include <assert.h>
 #include "TLeaf.h"
 #include "TObjArray.h"
+#include <unistd.h>
 
 // This is the class that should be used for parsing and analyzing
 // NetScope data files in .root format produced by the python script.

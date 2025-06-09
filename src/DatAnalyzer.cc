@@ -16,8 +16,10 @@ DatAnalyzer::~DatAnalyzer()
   cout << "In DatAnalyzer destructor" << endl;
   if (file)
   {
+    std::cout<<"Close File"<<std::endl;
     file->Close();
   }
+  std::cout<<"Done with DatAnalyzer destructor"<<std::endl;
 };
 
 /*
@@ -31,6 +33,7 @@ void DatAnalyzer::Analyze(){
   /*************************************
   LOOP OVER CHANNELS
   **************************************/
+
   for(unsigned int i=0; i<NUM_CHANNELS; i++) {
     ResetVar(i);
     if ( !config->hasChannel(i) ) {
@@ -42,7 +45,7 @@ void DatAnalyzer::Analyze(){
     // Get the attenuation/amplification scale factor and convert ADC counts to mV
     //IMPORTANT: polarity is taking into account here! if negative it will switch the pulse
     //-------------------------------------------------------------------------------------
-    float scale_factor = (1000.0 * DAC_SCALE / (float)DAC_RESOLUTION) * config->getChannelMultiplicationFactor(i);
+    float scale_factor = (1.0 * DAC_SCALE / (float)DAC_RESOLUTION) * config->getChannelMultiplicationFactor(i);
     
     // ------- Get baseline ------
     unsigned int bl_st_idx = static_cast<unsigned int>((config->channels[i].baseline_time[0])*NUM_SAMPLES);
@@ -78,26 +81,17 @@ void DatAnalyzer::Analyze(){
       baseline = f->GetParameter(0);
     }
 
-    if (config->channels[i].v_baseline.size() < 200) {
+    if (config->channels[i].v_baseline.size() < 200) 
+    {
       config->channels[i].v_baseline.push_back(baseline);
     }
-    else {
+    else 
+    {
       float mean = TMath::Mean(config->channels[i].v_baseline.size(), &(config->channels[i].v_baseline[0]));
       float rms = TMath::RMS(config->channels[i].v_baseline.size(), &(config->channels[i].v_baseline[0]));
 
-      if (fabs(mean - baseline)/rms > 10) {
-	//cout << "\n*********************************************************\n";
-	// cout <<   "******                   Warning           **************\n";
-	// cout << "Event : " << i_evt << "\t Baseline for channel " << i << " was observed to be " << baseline << " and is more than 10 standard deviations away from the average ( " << mean << " ). " << endl;
-	//cout <<   "*********************************************************\n";
-	// cout << "\n";
-
-	  //sixie: don't do this correction because it can cause subsequent algorithms to
-	  //       segfault. ideally should fix the algorithm, but for now just don't do
-	  //       the correction
-	  //baseline = mean;
-      }
-      else if (config->channels[i].v_baseline.size() < 800){
+      if (config->channels[i].v_baseline.size() < 800)
+      {
         config->channels[i].v_baseline.push_back(baseline);
       }
     }
@@ -160,40 +154,40 @@ void DatAnalyzer::Analyze(){
     float Re_b, Re_slope;
     bool fittable = true;
     fittable *= idx_min < (int)(NUM_SAMPLES*0.8);
-    fittable *= fabs(amp) > 8 * baseline_RMS;
-    fittable *= fabs(channel[i][idx_min+1]) > 4*baseline_RMS;
-    fittable *= fabs(channel[i][idx_min-1]) > 4*baseline_RMS;
-    fittable *= fabs(channel[i][idx_min+2]) > 3*baseline_RMS;
-    fittable *= fabs(channel[i][idx_min-2]) > 3*baseline_RMS;
+    fittable *= fabs(amp) > 3 * baseline_RMS;
+    fittable *= fabs(channel[i][idx_min+1]) > 2*baseline_RMS;
+    fittable *= fabs(channel[i][idx_min-1]) > 2*baseline_RMS;
+    fittable *= fabs(channel[i][idx_min+2]) > 2*baseline_RMS;
+    fittable *= fabs(channel[i][idx_min-2]) > 2*baseline_RMS;
     // fittable *= fabs(channel[i][idx_min+3]) > 2*baseline_RMS;
     // fittable *= fabs(channel[i][idx_min-3]) > 2*baseline_RMS;
     
     //-------------------------------------------------------------
-    //If pulse is still possitive change it automatically
+    //If pulse is still positive change it automatically
     //No sure this is a good idea (CP)
     //-------------------------------------------------------------
     if( fittable  && !config->channels[i].algorithm.Contains("None")) {
-    if( var["amp"][i] < 0 && config->channels[i].counter_auto_pol_switch > 0 ) {
-      config->channels[i].polarity *= -1;
-      amp = -amp;
-      var["amp"][i] = -var["amp"][i];
-      scale_factor = -scale_factor;
-      var["baseline"][i] = -var["baseline"][i];
-      for(unsigned int j=0; j<NUM_SAMPLES; j++) {
-	       channel[i][j] = -channel[i][j];
-      }
-      delete pulse;
-      pulse = new TGraphErrors(NUM_SAMPLES, time[GetTimeIndex(i)], channel[i], 0, yerr);
-      pulse->SetNameTitle("g_"+name, "g_"+name);
+      if( var["amp"][i] < 0 && config->channels[i].counter_auto_pol_switch > 0 ) {
+        config->channels[i].polarity *= -1;
+        amp = -amp;
+        var["amp"][i] = -var["amp"][i];
+        scale_factor = -scale_factor;
+        var["baseline"][i] = -var["baseline"][i];
+        for(unsigned int j=0; j<NUM_SAMPLES; j++) {
+          channel[i][j] = -channel[i][j];
+        }
+        delete pulse;
+        pulse = new TGraphErrors(NUM_SAMPLES, time[GetTimeIndex(i)], channel[i], 0, yerr);
+        pulse->SetNameTitle("g_"+name, "g_"+name);
 
-      if ( config->channels[i].counter_auto_pol_switch == 10 ) {
-	       cout << "[WARNING] Channel " << i << ": automatic polarity switched more than 10 times" << endl;
-	       cout << "[WARNING] Channel " << i << ": gonna keep inverting it for you. Better check your pulse polarity!!" << endl;
+        if ( config->channels[i].counter_auto_pol_switch == 10 ) {
+          cout << "[WARNING] Channel " << i << ": automatic polarity switched more than 10 times" << endl;
+          cout << "[WARNING] Channel " << i << ": gonna keep inverting it for you. Better check your pulse polarity!!" << endl;
+        }
+        config->channels[i].counter_auto_pol_switch ++;
       }
-      config->channels[i].counter_auto_pol_switch ++;
-    }
     
-    // if( fittable  && !config->channels[i].algorithm.Contains("None")) {
+      // if( fittable  && !config->channels[i].algorithm.Contains("None")) {
       /************************************
        //Get 10% of the amplitude crossings
        ************************************
@@ -212,7 +206,7 @@ void DatAnalyzer::Analyze(){
 
       j_90_pre = GetIdxFirstCross(amp*0.9, channel[i], j_10_pre, +1);
       AnalyticalPolinomialSolver(j_90_pre-j_10_pre+1, &(time[GetTimeIndex(i)][j_10_pre]), &(channel[i][j_10_pre]), 1, coeff);
-      var["risetime"][i] = coeff[1];
+      var["risetime"][i] = abs(0.8*var["amp"][i] / coeff[1]);
       delete [] coeff;
 
       j_90_post = GetIdxFirstCross(amp*0.9, channel[i], j_10_post, -1);
@@ -248,6 +242,7 @@ void DatAnalyzer::Analyze(){
         fpeak->SetParameter(0, amp * sqrt(2*3.14) * ext_sigma );
         fpeak->SetParameter(1, time[GetTimeIndex(i)][idx_min]);
         fpeak->SetParameter(2, ext_sigma);
+        fpeak->SetLineColor(kBlue);
 
         TString opt = "R";
         if ( draw_debug_pulses ) opt += "+";
@@ -264,15 +259,10 @@ void DatAnalyzer::Analyze(){
       // -------------- Do  linear fit
       ********************************/
       if(config->channels[i].algorithm.Contains("Re") ) {
-        // cout<<sizeof(time[GetTimeIndex(i)])/sizeof(time[GetTimeIndex(i)][0])<<endl;
-        // unsigned int i_min = GetMinIndex(channel[i]); // GetIdxFirstCross(config->channels[i].re_bounds[0]*amp, channel[i], idx_min, -1); config->channels[i].re_bounds[0]*amp
         unsigned int i_min = GetIdxFirstCross(config->channels[i].re_bounds[0]*amp, channel[i], idx_min, -1); // GetIdxClosest(min(channel[i]), channel[i], idx_min, -1);
         unsigned int i_max = GetIdxFirstCross(config->channels[i].re_bounds[1]*amp, channel[i], i_min  , +1);
         float t_min = time[GetTimeIndex(i)][i_min];
         float t_max = time[GetTimeIndex(i)][i_max];
-        // cout<<i_min<<"  -----------  "<<i_max<<endl;
-        // cout<<t_min<<"  -----------  "<<t_max<<endl;
-        // cout<<"==========================================="<<endl;
 
         TF1* flinear = new TF1("flinear"+name, "[0]*x+[1]", t_min, t_max);
         flinear->SetLineColor(2);
@@ -283,61 +273,14 @@ void DatAnalyzer::Analyze(){
         pulse->Fit("flinear"+name, opt);
         Re_slope = flinear->GetParameter(0);
         Re_b     = flinear->GetParameter(1);
-        // cout<<"==========================================="<<endl;
-        // cout<<config->channels[i].algorithm<<endl;
+
         for ( auto f : config->constant_fraction ) {
           var[Form("linear_RE_%d", (int)(100*f))][i] = (f*amp-Re_b)/Re_slope + myTimeOffset;
         }
-        // cout<<var[Form("linear_RE_%d", (int)(100*0.2))][i]<<endl;
-        // cout<<"==========================================="<<endl;
 
         for ( auto thr : config->constant_threshold ) {
             var[Form("linear_RE__%dmV", (int)(fabs(thr)))][i] = (thr-Re_b)/Re_slope + myTimeOffset;
         }
-        // cout<<"==========================================="<<endl;
-
-        // if (i_evt > 0 && i_evt < 10) { // Plotting the clock and the fitted line.
-        // TCanvas * c = new TCanvas(Form("fit_results%d", i_evt), Form("fit_results%d", i_evt));
-        // pulse->Draw(Form("channels[%d]:time", i), Form("event==%d", i_evt));
-        // const int bins = NUM_SAMPLES; // round(sizeof(channel[i])/sizeof(int));
-        // if (var[Form("linear_RE_%d", (int)(100*0.2))][i] == 0) {
-        //     cout<<"Clock time stamp is 0: "<<0.2*amp<<"     "<<Re_b<<endl;
-        // }
-        // cout<<t_min<<"     "<<t_max<<"     "<<bins<<endl;
-
-        // float line[bins] = {};
-        // float t = t_min;
-        // float time_array[bins] = {};
-        // float clock_waveform[bins] = {};
-        // for (int b = 0; b < bins; b++) {
-        //     t += b*(t_max - t_min)/bins;
-        //     time_array[b] = t;
-        //     line[b] = Re_slope * t + Re_b;
-        //     // clock_waveform[b] = channel[i][b]
-        //     // cout<<t<<"         "<<line[b]<<endl;
-        // }
-        // [GetTimeIndex(i)]
-        // for (int k =0; k<bins; k++) {
-        //     cout<<k<<")     "<<typeid(time[k]).name()<<"     "<<typeid(channel[k]).name()<<endl;
-        // }
-        // TGraph * clock_plot = new TGraph(bins, time[GetTimeIndex(i)], channel[i]);
-        // TGraph * line_plot  = new TGraph(bins, time_array, line);
-        // cout<<"The size of the time:    "<<sizeof(time[GetTimeIndex(i)])/sizeof(time[GetTimeIndex(i)][0])<<endl;
-        // cout<<"The size of the channel: "<<sizeof(channel[i])/sizeof(channel[i][0])<<endl;
-        // line_plot->SetLineColor(2);
-        // line_plot->SetLineWidth(2);
-        // clock_plot->SetLineColor(4);
-        // clock_plot->SetLineWidth(2);
-
-        // clock_plot->Draw("");
-        // line_plot->Draw("same");
-
-        // c->SaveAs(Form("/home/daq/ETROC2_Test_Stand/module_test_sw/analysis/FIT_PLOTS_TEST/fit_results%d.png", i_evt));
-        // delete clock_plot;
-        // delete line_plot;
-        // delete c;
-
-        // }
 
         delete flinear;
       }
@@ -590,7 +533,7 @@ void DatAnalyzer::Analyze(){
 
         //compute the signal amplitude from interpolation
         double tStep = (time[GetTimeIndex(i)][NUM_SAMPLES-1] - time[GetTimeIndex(i)][0])/(double)(NUM_SAMPLES-1)*1. ;
-        double realrisetime = abs(0.8*var["amp"][i] / var["risetime"][i]);
+        double realrisetime = var["risetime"][i];
 
         
         //Hack for square pulses
@@ -649,6 +592,7 @@ void DatAnalyzer::Analyze(){
     /*********************************************
     // ===================  Draw plot of the pulse
     **********************************************/
+    //draw_debug_pulses = draw_debug_pulses && abs(var["amp"][i]) > 10.0;
     if(draw_debug_pulses) {
 
       cout << "========= Event: " << i_evt << " - ch: " << i << endl;
@@ -718,9 +662,13 @@ void DatAnalyzer::Analyze(){
         integral_pulse->SetFillColor(40);
         integral_pulse->SetFillStyle(3144);
         integral_pulse->Draw("FC");
-        TText* t_int = new TText(var["t_peak"][i], amp, Form("Int = %1.2e (%1.2e) pC", var["integral"][i], var["intfull"][i]));
+        TText* t_int = new TText(var["t_peak"][i]+3, amp, Form("Integral Pulse = %1.2f,  Integral Full =%1.2f ", -var["integral"][i], -var["intfull"][i]));
         t_int->SetTextAlign(kHAlignLeft+kVAlignBottom);
         t_int->Draw();
+
+        TText* aNt = new TText(var["t_peak"][i]+3, amp+6, Form("LP2_50 = %1.2f, t peak = %1.2f,  amp =%1.2f ", var["LP2_50"][i], var["t_peak"][i], amp));
+        aNt->SetTextAlign(kHAlignLeft+kVAlignBottom);
+        aNt->Draw();
 
         // Draw 90% and 10% pre and post points
         TGraph* gr_pre_post = new TGraph(4);
@@ -755,6 +703,7 @@ void DatAnalyzer::Analyze(){
 
         unsigned int j_begin = j_10_pre - 6;
         unsigned int j_span = j_90_pre - j_10_pre + 10;
+        //if(!(j_begin >= 0 && j_begin < sizeof(time) / sizeof(time[0]))) continue;
         TGraphErrors* inv_pulse = new TGraphErrors(j_span, &(channel[i][j_begin]), &(time[GetTimeIndex(i)][j_begin]), yerr);
         inv_pulse->SetNameTitle("g_inv"+name, "g_inv"+name);
         inv_pulse->SetMarkerStyle(5);
@@ -881,12 +830,13 @@ void DatAnalyzer::RunEventsLoop() {
     unsigned int evt_progress_print_rate = verbose ? 100 : 1000;
     evt_progress_print_rate = 1;
 
-    std::cout << "Events loop started" << std::endl;
+    std::cout << "Events loop started: DatAnalyzer" << std::endl;
     unsigned int N_written_evts = 0;
     if ( bin_file != NULL )
     {
       auto last_displaced_time = std::time(0);
       for( i_evt = 0; !feof(bin_file) && (N_evts==0 || i_evt<N_evts); i_evt++){
+        std::cout<<Form("Printing i_evt = %i",i_evt)<<std::endl;
         if (verbose || (i_evt % 100 == 0 && std::time(0) - last_displaced_time > 3) || i_evt == 0) {
           last_displaced_time = std::time(0);
           cerr << "Processing Event " << i_evt << "\n";
@@ -913,11 +863,13 @@ void DatAnalyzer::RunEventsLoop() {
       int n_evt_tree = tree_in->GetEntries();
       std::cout << "NNNN: " << n_evt_tree << std::endl;
       for(int i_aux = start_evt; i_aux < n_evt_tree && (N_evts==0 || i_aux<N_evts); i_aux++){
+        // std::cout<<Form("Printing i_evt = %i",i_evt)<<std::endl;
         if (i_aux % 500 == 0) cout << "Processing Event " << i_aux << "\n";
         GetChannelsMeasurement( i_aux );
         Analyze();
-        N_written_evts++;
         tree->Fill();
+        N_written_evts++;
+        i_evt++;
       }
     }
 
@@ -1315,7 +1267,7 @@ float DatAnalyzer::GetPulseIntegral(float *a, float *t, unsigned int i_st, unsig
     integral += ( (t[i+2]-t[i]) / 6.0 ) * aux;
   }
 
-  integral *= 1e-9 * 1e-3 * (1.0/50.0) * 1e12; //in units of pC, for 50 [Ohms] termination
+  integral *= -1.0;//1e-9 * 1e-3 * (1.0/50.0) * 1e12; //in units of pC, for 50 [Ohms] termination
   return integral;
 }
 
