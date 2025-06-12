@@ -12,12 +12,12 @@ ifeq ($(shell uname), Darwin)
 	CPPFLAGS += -rpath $(shell root-config --prefix)/lib
 endif
 
-TARGETS = VMEDat2Root DRSDat2Root DRSclDat2Root NetScopeDat2Root NetScopeStandaloneDat2Root ETL_ASIC_Dat2Root DT5742Dat2Root
-SRC = src/Configuration.cc src/Interpolator.cc src/DatAnalyzer.cc 
+TARGETS = NetScopeStandaloneDat2Root
+SRC = src/Configuration.cc src/DatAnalyzer.cc 
 
 all : $(TARGETS)
 
-$(TARGETS) : %Dat2Root : $(SRC:.cc=.o) src/%Analyzer.o app/%Dat2Root.cc
+$(TARGETS) : %Dat2Root : $(SRC:.cc=.o) src/%Analyzer.o ./%Dat2Root.cc
 	@echo Building $@
 	$(LD) $(CPPFLAGS) -o $@ $^ $(LDFLAGS)
 
@@ -25,4 +25,4 @@ $(TARGETS) : %Dat2Root : $(SRC:.cc=.o) src/%Analyzer.o app/%Dat2Root.cc
 	@echo $@
 	$(CXX) $(CPPFLAGS) -o $@ -c $<
 clean :
-	rm -rf *.o app/*.o src/*.o $(TARGETS) *~ *.dSYM
+	rm -rf *.o src/*.o $(TARGETS) *~ *.dSYM

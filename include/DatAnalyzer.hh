@@ -31,7 +31,6 @@
 
 // LOCAL INCLUDES
 #include "Configuration.hh"
-#include "Interpolator.hh"
 
 #define F_LOW 0//low frequency in GHz
 #define F_HIGH 5//High frequency in GHz
@@ -80,9 +79,6 @@ class DatAnalyzer {
         //int TimeOverThreshold(double tThresh, double tMin, double tMax, int ich, int t_index, float& time1, float& time2);
         float FrequencySpectrum(double freq, double tMin, double tMax, int ich, int t_index);
         float FrequencySpectrum(double freq, double tMin, double tMax, unsigned int n_samples, float* my_channel, float* my_time);
-        int TimeOverThreshold(Interpolator *voltage, double tThresh, double tMin, double tMax, int ich, int t_index, float& time1, float& time2, float myTimeOffset = 0.0);
-
-
         void RunEventsLoop();
 
     protected:
