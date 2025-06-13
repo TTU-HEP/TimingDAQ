@@ -8,12 +8,8 @@ CPPFLAGS := $(shell root-config --cflags) -I$(INC)/include
 CPPFLAGS += -g
 #CPPFLAGS += -g -fsanitize=address -Wall -Wextra -Wno-sign-compare
 
-ifeq ($(shell uname), Darwin)
-	CPPFLAGS += -rpath $(shell root-config --prefix)/lib
-endif
-
-TARGETS = NetScopeStandaloneDat2Root
-SRC = src/Configuration.cc src/DatAnalyzer.cc 
+TARGETS = DRSDat2Root
+SRC = src/Configuration.cc src/DRSAnalyzer.cc 
 
 all : $(TARGETS)
 

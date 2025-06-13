@@ -6,14 +6,13 @@
 #include <TROOT.h>
 
 //LOCAL INCLUDES
-#include "NetScopeStandaloneAnalyzer.hh"
+#include "DRSAnalyzer.hh"
 
-using namespace std;
-
-int main(int argc, char **argv) {
+int main(int argc, char **argv) 
+{
   gROOT->SetBatch();
 
-  NetScopeStandaloneAnalyzer analyzer;
+  DRSAnalyzer analyzer;
   analyzer.GetCommandLineArgs(argc, argv);
   analyzer.InitOutput();
   analyzer.InitLoop();

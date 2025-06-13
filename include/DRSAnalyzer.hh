@@ -1,10 +1,11 @@
-#ifndef DatAnalyzer_HH
-#define DatAnalyzer_HH
+#ifndef DRSAnalyzer_HH
+#define DRSAnalyzer_HH
 
 // STD INCLUDES
 #include <iostream>
 #include <string>
 #include <ctime>
+#include <unistd.h>
 
 // SYS includes
 #include <sys/types.h>
@@ -24,10 +25,9 @@
 #include "TVectorF.h"
 #include "TMatrixF.h"
 #include <TComplex.h>
-// #include "TDecompSVD.h"
 #include "TDecompChol.h"
-// #include "TMatrixDSym.h"
 #include "TF1.h"
+#include "TLeaf.h"
 
 // LOCAL INCLUDES
 #include "Configuration.hh"
@@ -37,10 +37,10 @@
 
 // This is the base class for .dat --> .root converters.
 
-class DatAnalyzer {
+class DRSAnalyzer {
     public:
-        DatAnalyzer(int numChannels, int numTimes, int numSamples, int res, float scale, int numFsamples = 0);
-        ~DatAnalyzer();
+        DRSAnalyzer(int numChannels=999, int numTimes=999, int numSamples=999, int res=1, float scale=1.0, int numFsamples=0);
+        ~DRSAnalyzer();
         int getNumChannels() { return NUM_CHANNELS; }
         int getNumTimes() { return NUM_TIMES; }
         int getNumSamples() { return NUM_SAMPLES; }
@@ -50,36 +50,34 @@ class DatAnalyzer {
         void setNumSamples(unsigned int numSamples) {NUM_SAMPLES = numSamples;}
 
         TString ParseCommandLine( int argc, char* argv[], TString opt );
-        virtual void GetCommandLineArgs(int argc, char **argv);
 
-        virtual void InitOutput();
-        virtual void InitLoop();
-        virtual void ResetVar(unsigned int n_ch);
-
-        virtual void ResetAnalysisVariables();
-        virtual int GetChannelsMeasurement() {
-          std::cerr << "Please use a child class of DatAnalyzer" << std::endl;
-          return 0;
-        }
-        virtual int GetChannelsMeasurement( int i ) {
-          std::cerr << "Please use a child class of DatAnalyzer" << std::endl;
-          return 0;
-        }
-
-        virtual unsigned int GetTimeIndex(unsigned int n_ch) { return n_ch; } // Return the index of the time associated with the channel n_ch
-        virtual void Analyze();
+        void InitOutput();
+        void InitLoopPart1();
+        void ResetVar(unsigned int n_ch);
+        void ResetAnalysisVariables();
+        void Analyze();
 
         float GetPulseIntegral(float *a, float *t, unsigned int i_st, unsigned int i_stop); //returns charge in pC asssuming 50 Ohm termination
-        int GetMinIndex(float* array);
         unsigned int GetIdxClosest(float value, float* v, unsigned int i_st, int direction=+1);
         unsigned int GetIdxFirstCross(float value, float* v, unsigned int i_st, int direction=+1);
         void AnalyticalPolinomialSolver(unsigned int Np, float* in_x, float* in_y, unsigned int deg, float* &out_coeff, float* err = 0);
         float PolyEval(float x, float* coeff, unsigned int deg);
         float WSInterp(float t, int N, float* tn, float* cn);
-        //int TimeOverThreshold(double tThresh, double tMin, double tMax, int ich, int t_index, float& time1, float& time2);
         float FrequencySpectrum(double freq, double tMin, double tMax, int ich, int t_index);
         float FrequencySpectrum(double freq, double tMin, double tMax, unsigned int n_samples, float* my_channel, float* my_time);
         void RunEventsLoop();
+
+        void GetCommandLineArgs(int argc, char **argv);
+        std::string split(const std::string& half, const std::string& s, const std::string& h) const;
+        void GetDim(TTree* const tree, const std::string& var, unsigned int& f, unsigned int& s);
+        void InitLoop();
+        int GetChannelsMeasurement(int i_aux);
+        unsigned int GetTimeIndex(unsigned int n_ch) { return 0; }
+
+        inline bool exists_test2(const std::string& name) 
+        {
+          return ( access( name.c_str(), F_OK ) != -1 );
+        }
 
     protected:
 
@@ -89,7 +87,6 @@ class DatAnalyzer {
         const unsigned int NUM_F_SAMPLES;//Fourier samples
         const unsigned int DAC_RESOLUTION; // DAC resolution (2^[bit])
         const float DAC_SCALE; // [V] total scale of the DAC
-
 
         float scale_minimum = -500; // [mV] Voltage value corresponding to 0 DAC counts
 
@@ -110,11 +107,7 @@ class DatAnalyzer {
         bool draw_debug_pulses = false;
         bool correctForTimeOffsets = false;
         TString img_format = ".png";
-
         long int N_evt_expected = -1;
-
-        // Reader variables
-        FILE* bin_file = nullptr;
 
         // Analysis variables
         float* AUX_time;
@@ -128,11 +121,11 @@ class DatAnalyzer {
         float* timeOffset;
 
         // Output tree vars
-        unsigned int i_evt = 0;
+        int event_n = 0;
 
         // Output root file
-        TFile *file;
-        TTree *tree;
+        TFile* file;
+        TTree* tree;
         //Input root files (optional, now use by ETL simulation)
         TFile* file_in;
         TTree* tree_in;
@@ -149,6 +142,8 @@ class DatAnalyzer {
           "risetime",
           "decaytime"
         };
+
+        vector<int> active_ch;
 };
 
 #endif
