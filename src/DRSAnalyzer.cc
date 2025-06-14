@@ -1,34 +1,7 @@
 #include "DRSAnalyzer.hh"
 
-#define DEFAULT_FOR_EMPTY_CH 0
-
 using namespace std;
 
-DRSAnalyzer::DRSAnalyzer(int numChannels, int numTimes, int numSamples, int res, float scale, int numFsamples) :
-        NUM_CHANNELS(numChannels), NUM_TIMES(numTimes), NUM_SAMPLES(numSamples), NUM_F_SAMPLES(numFsamples),
-        DAC_RESOLUTION(res), DAC_SCALE(scale),
-        file(0), tree(0) 
-{
-}
-
-DRSAnalyzer::~DRSAnalyzer()
-{
-  cout << "In DRSAnalyzer destructor" << endl;
-  if (file)
-  {
-    std::cout<<"Close File"<<std::endl;
-    file->Close();
-  }
-  std::cout<<"Done with DRSAnalyzer destructor"<<std::endl;
-};
-
-/*
-**********************************************
-Main Method of the class. Analyzes all events
-Stores all values of the time stamps and other
-analysis quantities.
-**********************************************
-*/
 void DRSAnalyzer::Analyze()
 {
   /*************************************
@@ -666,220 +639,7 @@ void DRSAnalyzer::Analyze()
   }
 }
 
-/*
-*****************************************
-Loop Over All Events and Check Corruption
-*****************************************
-*/
-void DRSAnalyzer::RunEventsLoop() 
-{
-    unsigned int evt_progress_print_rate = verbose ? 100 : 1000;
-    std::cout << "Events loop started: DRSAnalyzer" << std::endl;
-    unsigned int N_written_evts = 0;
-    int n_evt_tree = tree_in->GetEntries();
-    std::cout << "Total Number of Events: " << n_evt_tree << std::endl;
-
-    for(int i_aux = start_evt; i_aux < n_evt_tree && (N_evts==0 || i_aux<N_evts); i_aux++)
-    {
-      // std::cout<<Form("Printing event_n = %i",event_n)<<std::endl;
-      if (i_aux % 500 == 0) cout << "Processing Event " << i_aux << "\n";
-      GetChannelsMeasurement( i_aux );
-      Analyze();
-      tree->Fill();
-      N_written_evts++;
-      event_n++;
-    }
-    std::cout << "\nLoaded total of " << tree->GetEntries() << " (" << event_n << ") events\n" << std::endl;
-
-    if(N_evt_expected>0 && N_evt_expected!=event_n && N_evts == 0) 
-    {
-      cout << endl;
-      cout << "====================== WARNING =====================" << endl;
-      cout << "|    Number of events not matching expectations    |" << endl;
-      cout << "          " << N_evt_expected << "  !=  " << event_n << endl;
-      cout << "====================================================" << endl;
-      cout << endl;
-    }
-    file->Write();
-    std::cout << "Written total of " << N_written_evts << " events\n" << std::endl;
-}
-
-TString DRSAnalyzer::ParseCommandLine( int argc, char* argv[], TString opt )
-{
-  TString out = "";
-  for (int i = 1; i < argc && out==""; i++ ) 
-  {
-    TString tmp( argv[i] );
-    if ( tmp.Contains("--"+opt) ) 
-    {
-      if(tmp.Contains("=")) 
-      {
-        out = tmp(tmp.First("=")+1, tmp.Length());
-      }
-      else 
-      {
-        out = "true";
-      }
-    }
-  }
-  return out;
-}
-
-void DRSAnalyzer::GetCommandLineArgs(int argc, char **argv) 
-{
-  cout << endl << "-------------- TimingDAQ (DRS2Root) --------------" << endl;
-
-  input_file_path = ParseCommandLine( argc, argv, "input_file" );
-  ifstream in_file(input_file_path.Data());
-  if (!in_file || input_file_path == "" || !(input_file_path.EndsWith(".dat") || input_file_path.EndsWith(".root")) )
-  {
-    cerr << "[ERROR]: please provide a valid input file. Use: --input_file=<your_input_file_path>.dat or  --input_file=<your_input_file_path>.root" << endl;
-    if (!in_file) 
-    {
-      cerr << "Can not open file: " << input_file_path.Data() << endl;
-    }
-    else if (input_file_path == "") 
-    {
-      cerr << "Empty input file path." << endl;
-    }
-    exit(0);
-  }
-  else if (verbose)
-  {
-    cout << "Input file: " << input_file_path.Data() << endl;
-  }
-
-  TString aux;
-  aux = ParseCommandLine( argc, argv, "verbose" );
-  aux.ToLower();
-  if(aux == "true") verbose = true;
-
-  aux = ParseCommandLine( argc, argv, "config" );
-  if(aux == "")
-  {
-    cerr << "[ERROR]: Missing config file" << endl;
-    exit(0);
-  }
-  if(verbose) {cout << "Config file: " << aux.Data() << endl;}
-  config = new Configuration(aux.Data(), verbose);
-  if ( !config->isValid() ) 
-  {
-    cerr << "\nFailed to load channel information from config " << aux.Data() << endl;
-    exit(0);
-  }
-
-  // -------- Non compulsory command line arguments
-  output_file_path = ParseCommandLine( argc, argv, "output_file" );
-  if ( output_file_path == "" )
-  {
-    output_file_path = input_file_path;
-
-    if ( output_file_path.EndsWith(".dat") )
-    {
-      output_file_path.ReplaceAll(".dat", "_converted.root");
-    }
-    else if ( output_file_path.EndsWith(".root") )
-    {
-      output_file_path.ReplaceAll(".root", "_converted.root");
-    }
-    std::cout << "=====" << output_file_path << std::endl;
-  }
-  else if (!output_file_path.EndsWith(".root")) output_file_path += ".root";
-  if (verbose) {std::cout << "Output file: " << output_file_path.Data() << std::endl;}
-
-
-  aux = ParseCommandLine( argc, argv, "N_evts" );
-  long int N_tmp = aux.Atoi();
-  if(N_tmp<0) 
-  {
-    cout << "[ERROR]: Number of events has to be positive or 0. If 0 the whole file will be analyzed." << endl;
-    exit(0);
-  }
-  N_evts = N_tmp;
-  if ( verbose ) 
-  {
-    cout << "Number of events: " << flush;
-    if(N_evts == 0){ cout << "Not specified." << endl;}
-    else{ cout << N_evts << endl;}
-  }
-
-  aux = ParseCommandLine( argc, argv, "start_evt" );
-  if(aux != "") 
-  {
-    start_evt = aux.Atoi();
-    cout << "[INFO] Starting from event: " << start_evt << endl;
-  }
-
-  aux = ParseCommandLine( argc, argv, "N_evt_expected" );
-  N_evt_expected = aux.Atoi();
-  if(N_evt_expected>0) 
-  {
-    cout << "[INFO] Number of expected events: " << flush;
-    cout << N_evt_expected << endl;
-  }
-
-  aux = ParseCommandLine( argc, argv, "correctForTimeOffsets" );
-  aux.ToLower();
-  if(aux == "true") correctForTimeOffsets = true;
-
-  aux = ParseCommandLine( argc, argv, "save_raw" );
-  aux.ToLower();
-  if(aux == "true")
-  {
-    save_raw = true;
-    std::cout << "save raw" << std::endl;
-  }
-
-  aux = ParseCommandLine( argc, argv, "save_meas" );
-  aux.ToLower();
-  if(aux == "true") save_meas = true;
-
-  aux = ParseCommandLine( argc, argv, "draw_debug_pulses" );
-  aux.ToLower();
-  if(aux != "false" && aux != "") 
-  {
-    if(aux != "true") img_format = aux;
-    cout << "[INFO]: Saving debug pulses in " << img_format.Data() << endl;
-    draw_debug_pulses =  true;
-
-    struct stat info;
-    if( stat( "./pulses_imgs", &info ) != 0 ) 
-    {
-      cout << "[ERROR]: Cannot access ./pulses_imgs" << endl;
-      cout << "--------> Please create it and rerun." << endl;
-      exit(0);
-    }
-  }
-}
-
-void DRSAnalyzer::InitOutput() 
-{
-    /*
-    ************************
-    INITIALIZE TFILE and OUTPUT TREE
-    ************************
-    */
-    std::cout << "Initializing input file reader and output tree" << std::endl;
-    file = new TFile(output_file_path.Data(), "RECREATE");
-    ifstream out_file(output_file_path.Data());
-    if (!out_file)
-    {
-      cerr << "[ERROR]: Cannot create output file: " << output_file_path.Data() << endl;
-      exit(0);
-    }
-    tree = new TTree("EventTree", "Digitized waveforms");
-    tree->Branch("event_n", &event_n, "event_n/i");
-    
-    if ( input_file_path.EndsWith(".root") )//place holder for input file in the future.
-    {
-      std::cout << "Initializing input root file" << std::endl;
-      file_in = new TFile(input_file_path,"READ");
-      tree_in = (TTree*)file_in->Get("EventTree");
-      std::cout << "Opened input file:" << input_file_path << std::endl;
-    }
-}
-
-void DRSAnalyzer::InitLoopPart1() 
+void DRSAnalyzer::InitLoop() 
 {
     /*
     ************************
@@ -1021,11 +781,18 @@ void DRSAnalyzer::InitLoopPart1()
     for(unsigned int i = 0; i < NUM_CHANNELS; i++) ResetVar(i);
 };
 
+int DRSAnalyzer::GetChannelsMeasurement(int i_aux) 
+{
+  ResetAnalysisVariables();
+  tree_in->GetEntry(i_aux);
+  return 0;
+}
+
 void DRSAnalyzer::ResetVar(unsigned int n_ch) 
 {
   for(auto n: var_names) 
   {
-    var[n][n_ch] = DEFAULT_FOR_EMPTY_CH;
+    var[n][n_ch] = 0;
   }
 }
 
@@ -1228,56 +995,4 @@ void DRSAnalyzer::GetDim(TTree* const tree, const std::string& var, unsigned int
   std::string seconddim = split("first", split("last", title, "]["), "]");
   f = static_cast<unsigned int>(std::atoi(firstdim.c_str()));
   s = static_cast<unsigned int>(std::atoi(seconddim.c_str()));
-}
-
-void DRSAnalyzer::InitLoop()
-{
-
-  // Get the list of branches
-  TObjArray* branchList = tree_in->GetListOfBranches();
-
-  std::vector<std::string> DRS_Channel_Names;
-
-
-  std::cout << "Branches in tree:" << std::endl;
-  for (int i = 0; i < branchList->GetEntries(); ++i) 
-  {
-    TBranch* branch = (TBranch*)branchList->At(i);
-    std::string brName = std::string(branch->GetName());
-    if (brName.find("DRS") != std::string::npos && brName.find("Channel") != std::string::npos) 
-    {
-      DRS_Channel_Names.push_back(brName);
-    }
-  }
-
-  for(const auto& n : DRS_Channel_Names)
-  {
-    std::cout<<n<<std::endl;
-  }
-
-  cout<<"Define numChannels, numTime, and numSamples from input TTree"<<endl;
-  unsigned int numChannels, numTime, numSamples;
-  GetDim(tree_in, "channel", numChannels, numSamples);
-  GetDim(tree_in, "time", numTime, numSamples);
-  setNumChannels(numChannels);
-  setNumTimes(numTime);
-  setNumSamples(numSamples);
-  for(unsigned int i = 0; i < NUM_CHANNELS; i++){active_ch.emplace_back(i);}
-
-  InitLoopPart1();
-  cout<<"Finished DRSAnalyzer InitLoop"<<endl;
-  tree_in->SetBranchAddress("event_n", &event_n);
-  tree_in->SetBranchAddress("channel", &(channel[0][0]));
-  tree_in->SetBranchAddress("time", &(time[0][0]));
-  tree_in->SetBranchAddress("timeoffsets", &(timeOffset[0]));
-
-  tree->Branch("timeoffsets", &(timeOffset[0]), Form("timeoffsets[%d]/F", NUM_CHANNELS));
-}
-
-// Fill tc, raw, time and amplitude
-int DRSAnalyzer::GetChannelsMeasurement(int i_aux) 
-{
-  ResetAnalysisVariables();
-  tree_in->GetEntry(i_aux);
-  return 0;
 }

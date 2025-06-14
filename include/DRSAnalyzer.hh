@@ -39,8 +39,23 @@
 
 class DRSAnalyzer {
     public:
-        DRSAnalyzer(int numChannels=999, int numTimes=999, int numSamples=999, int res=1, float scale=1.0, int numFsamples=0);
-        ~DRSAnalyzer();
+        DRSAnalyzer(int numChannels=999, int numTimes=999, int numSamples=999, int res=1, float scale=1.0, int numFsamples=0) :
+        NUM_CHANNELS(numChannels), NUM_TIMES(numTimes), NUM_SAMPLES(numSamples), DAC_RESOLUTION(res), DAC_SCALE(scale), NUM_F_SAMPLES(numFsamples),
+        file(0), tree(0) 
+        {
+        }
+
+        ~DRSAnalyzer()
+        {
+          cout << "In DRSAnalyzer destructor" << endl;
+          if (file)
+          {
+            std::cout<<"Close File"<<std::endl;
+            file->Close();
+          }
+          std::cout<<"Done with DRSAnalyzer destructor"<<std::endl;
+        }
+
         int getNumChannels() { return NUM_CHANNELS; }
         int getNumTimes() { return NUM_TIMES; }
         int getNumSamples() { return NUM_SAMPLES; }
@@ -49,13 +64,11 @@ class DRSAnalyzer {
         void setNumTimes(unsigned int numTimes) {NUM_TIMES = numTimes;}
         void setNumSamples(unsigned int numSamples) {NUM_SAMPLES = numSamples;}
 
-        TString ParseCommandLine( int argc, char* argv[], TString opt );
-
-        void InitOutput();
-        void InitLoopPart1();
+        void Analyze();
+        void InitLoop();
+        void RunEventsLoop();
         void ResetVar(unsigned int n_ch);
         void ResetAnalysisVariables();
-        void Analyze();
 
         float GetPulseIntegral(float *a, float *t, unsigned int i_st, unsigned int i_stop); //returns charge in pC asssuming 50 Ohm termination
         unsigned int GetIdxClosest(float value, float* v, unsigned int i_st, int direction=+1);
@@ -65,12 +78,8 @@ class DRSAnalyzer {
         float WSInterp(float t, int N, float* tn, float* cn);
         float FrequencySpectrum(double freq, double tMin, double tMax, int ich, int t_index);
         float FrequencySpectrum(double freq, double tMin, double tMax, unsigned int n_samples, float* my_channel, float* my_time);
-        void RunEventsLoop();
-
-        void GetCommandLineArgs(int argc, char **argv);
         std::string split(const std::string& half, const std::string& s, const std::string& h) const;
         void GetDim(TTree* const tree, const std::string& var, unsigned int& f, unsigned int& s);
-        void InitLoop();
         int GetChannelsMeasurement(int i_aux);
         unsigned int GetTimeIndex(unsigned int n_ch) { return 0; }
 
@@ -79,7 +88,7 @@ class DRSAnalyzer {
           return ( access( name.c_str(), F_OK ) != -1 );
         }
 
-    protected:
+    // protected:
 
         unsigned int NUM_CHANNELS;
         unsigned int NUM_TIMES;
