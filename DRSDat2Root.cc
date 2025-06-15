@@ -83,31 +83,22 @@ int main(int argc, char **argv)
   a.file = new TFile(a.output_file_path.Data(), "RECREATE");
   a.tree_in = (TTree*)a.file_in->Get("EventTree");
   a.tree = new TTree("EventTree", "Digitized waveforms");
-
   a.branches = a.tree_in->GetListOfBranches();
-
   TPRegexp channelRegex("^DRS_Board[0-9]+_Group[0-9]+_Channel[0-9]+$");
 
   for (unsigned int i = 0; i < a.branches->GetEntries(); ++i) 
   {
     auto* br = (TBranch*)a.branches->At(i);
     const auto& name = br->GetName();
+    a.branch_names.emplace_back(name);
 
     if (channelRegex.Match(name))
     {
-      a.branch_names_DRS.emplace_back(name);
       auto* vec = new std::vector<float>;
       a.tree_in->SetBranchAddress(name, &vec);
       a.channelMap[name] = vec;
-      std::cout<<"PulseShapes here: "<<name<<std::endl;
-    }
-    else
-    {
-      a.branch_names_OnlyCopy.emplace_back(name);
     }
   }
-
-  // std::sort(branch_names.begin(), branch_names.end());
 
   a.InitLoop();
 
@@ -117,20 +108,15 @@ int main(int argc, char **argv)
 
   for(int i_aux = a.start_evt; i_aux < n_evt_tree && (a.N_evts==0 || i_aux<a.N_evts); i_aux++)
   {
-    if (i_aux % 500 == 0) std::cout << "Processing Event " << i_aux << "\n" << std::endl;
+    if (i_aux % 500 == 0) std::cout << "Processing Event " << i_aux << std::endl;
     a.GetChannelsMeasurement(i_aux);
-    // std::cout<<"made it here 1"<<std::endl;
     a.Analyze();
-    // std::cout<<"made it here 2"<<std::endl;
     a.tree->Fill();
-    // std::cout<<"made it here 3"<<std::endl;
     N_written_evts++;
     a.event_n++;
   }
 
   a.file->Write();
-  a.file->Close();
-  a.file_in->Close();
 
   return 0;
 }

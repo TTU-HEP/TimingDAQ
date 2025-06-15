@@ -102,7 +102,6 @@ void DRSAnalyzer::Analyze()
       }
     }
 
-    //std::cout << "amp: " << amp << std::endl;
     if(config->channels[i].algorithm.Contains("HNR")) {delete f;}
 
     //************************************************************************************
@@ -137,7 +136,7 @@ void DRSAnalyzer::Analyze()
     float Re_b, Re_slope;
     bool fittable = true;
     fittable *= idx_min < (int)(NUM_SAMPLES*0.8);
-    fittable *= fabs(amp) > 8 * baseline_RMS;
+    fittable *= fabs(amp) > 100 * baseline_RMS;
     fittable *= fabs(channel[idx_min+1]) > 3*baseline_RMS;
     fittable *= fabs(channel[idx_min-1]) > 3*baseline_RMS;
     fittable *= fabs(channel[idx_min+2]) > 2*baseline_RMS;
@@ -147,7 +146,6 @@ void DRSAnalyzer::Analyze()
     
     //-------------------------------------------------------------
     //If pulse is still positive change it automatically
-    //No sure this is a good idea (CP)
     //-------------------------------------------------------------
     if( fittable  && !config->channels[i].algorithm.Contains("None")) 
     {
@@ -173,12 +171,11 @@ void DRSAnalyzer::Analyze()
         }
         config->channels[i].counter_auto_pol_switch ++;
       }
-    
-      // if( fittable  && !config->channels[i].algorithm.Contains("None")) {
+
       /************************************
-       //Get 10% of the amplitude crossings
-       ************************************
-       */
+      //Get 10% of the amplitude crossings
+      ************************************
+      */
       j_10_pre = GetIdxFirstCross(amp*0.1, channel, idx_min, -1);
       j_10_post = GetIdxFirstCross(amp*0.1, channel, idx_min, +1);
 
@@ -639,7 +636,7 @@ void DRSAnalyzer::Analyze()
 
 void DRSAnalyzer::InitLoop() 
 {
-  for (const auto& name : branch_names_OnlyCopy) 
+  for (const auto& name : branch_names) 
   {
       auto* br = tree_in->GetBranch(name);
       auto* leaf = br->GetLeaf(name);
@@ -677,13 +674,12 @@ void DRSAnalyzer::InitLoop()
       }
 
       branch_buffers[name] = buffer;
-
-      std::cout<<"Old Variables: "<<name<<std::endl;
   }
 
   for(auto& [name, channel] : channelMap) 
   {
     tree_in->SetBranchAddress(name, &channel);
+    tree->Branch(name, &channel);
   }
   tree_in->GetEntry(0);
 
@@ -693,7 +689,6 @@ void DRSAnalyzer::InitLoop()
   NUM_SAMPLES = 900;
   time = std::vector<float>(NUM_SAMPLES);
   for (unsigned int i = 0; i < NUM_SAMPLES; i++){ time[i] = (200.0 / 1000.0) * i; }
-  // for (unsigned int i = 0; i < NUM_CHANNELS; i++){ active_ch.emplace_back(i); }
 
   bool at_least_1_gaus_fit = false;
   bool at_least_1_rising_edge = false;
@@ -751,7 +746,6 @@ void DRSAnalyzer::InitLoop()
       TString n = chName + vn;
       var[n] = float(-999.9);
       tree->Branch(n, &var[n], n+"/F");
-      std::cout<<"New Variables: "<<n<<std::endl;
     }
   }
 
@@ -784,11 +778,9 @@ void DRSAnalyzer::ResetAnalysisVariables()
   for (auto& ch : channelMap) 
   {
     const auto& chName = ch.first + "_";
-    // std::cout<<ch.second->size()<<std::endl;
     auto& channel = *ch.second;
     for(unsigned int j=0; j<NUM_SAMPLES; j++) 
     {
-      // std::cout<<j<<" "<<channel.size()<<std::endl;
       channel[j] = 0;
       if(i < NUM_TIMES) time[j] = 0;
     }

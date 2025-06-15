@@ -46,7 +46,14 @@ class DRSAnalyzer {
         file(0), tree(0) 
         {
         }
-        ~DRSAnalyzer(){ if (file) file->Close(); }
+        ~DRSAnalyzer()
+        { 
+          std::cout << "DRSAnalyzer destructor called." << std::endl;
+          if (file) file->Close();
+          if (file_in) file_in->Close();
+          for (auto& [name, vec] : channelMap) { if (vec) delete vec; }
+          if (config) delete config;
+        }
 
         void Analyze();
         void InitLoop();
@@ -123,8 +130,7 @@ class DRSAnalyzer {
         };
         std::vector<TString> DRS_Channel_Names;
         std::map<TString, void*> branch_buffers;
-        std::vector<TString> branch_names_OnlyCopy;
-        std::vector<TString> branch_names_DRS;
+        std::vector<TString> branch_names;
 
         // vector<int> active_ch;
 };
