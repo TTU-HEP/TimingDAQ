@@ -67,8 +67,6 @@ class DRSAnalyzer {
         void AnalyticalPolinomialSolver(unsigned int Np, float* in_x, float* in_y, unsigned int deg, float* &out_coeff);
         float PolyEval(float x, float* coeff, unsigned int deg);
         float WSInterp(float t, int N, std::vector<float> tn, std::vector<float> cn);
-        std::string split(const std::string& half, const std::string& s, const std::string& h) const;
-        void GetDim(TTree* const tree, const std::string& var, unsigned int& f, unsigned int& s);
         int GetChannelsMeasurement(int i_aux);
         unsigned int GetTimeIndex(unsigned int n_ch) { return 0; }
         inline bool exists_test2(const std::string& name) { return ( access( name.c_str(), F_OK ) != -1 ); }
@@ -101,9 +99,8 @@ class DRSAnalyzer {
         long int N_evt_expected = -1;
 
         // Analysis variables
-        std::vector<float> time;
         std::map<TString, std::vector<float>*> channelMap;
-        std::vector<float> timeOffset;
+        std::vector<float> time;
 
         // Output tree vars
         unsigned int event_n = 0;
@@ -111,7 +108,6 @@ class DRSAnalyzer {
         // Output root file
         TFile* file;
         TTree* tree;
-        //Input root files (optional, now use by ETL simulation)
         TFile* file_in;
         TTree* tree_in;
         TObjArray* branches;
@@ -131,8 +127,6 @@ class DRSAnalyzer {
         std::vector<TString> DRS_Channel_Names;
         std::map<TString, void*> branch_buffers;
         std::vector<TString> branch_names;
-
-        // vector<int> active_ch;
 };
 
 #endif

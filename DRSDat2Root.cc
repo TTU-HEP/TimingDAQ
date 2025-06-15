@@ -90,13 +90,16 @@ int main(int argc, char **argv)
   {
     auto* br = (TBranch*)a.branches->At(i);
     const auto& name = br->GetName();
-    a.branch_names.emplace_back(name);
 
     if (channelRegex.Match(name))
     {
       auto* vec = new std::vector<float>;
       a.tree_in->SetBranchAddress(name, &vec);
       a.channelMap[name] = vec;
+    }
+    else
+    {
+      a.branch_names.emplace_back(name);
     }
   }
 

@@ -8,10 +8,10 @@ void DRSAnalyzer::Analyze()
   LOOP OVER CHANNELS
   **************************************/
   unsigned int i = 0;
-  for (auto& ch : channelMap) 
+  for(const auto& [n, chVec] : channelMap) 
   {
-    const auto& chName = ch.first + "_";
-    auto& channel = *ch.second;
+    const auto& chName = n + "_";
+    auto channel = std::vector<float>(chVec->begin(), chVec->begin() + std::min((size_t)NUM_SAMPLES, chVec->size()));
 
     if ( !config->hasChannel(i) ) continue;
     TString name = Form("pulse_event%d_ch%d", event_n, i);
@@ -84,7 +84,7 @@ void DRSAnalyzer::Analyze()
         channel[j] = scale_factor * (channel[j] - f->Eval(time[j]));//baseline subtraction
       }
       else channel[j] = scale_factor * (channel[j] - baseline);//baseline subtraction
-      bool range_check = j>bl_st_idx+bl_length && j<(int)(0.9*NUM_SAMPLES);
+      bool range_check = j>bl_st_idx+bl_length && j<(int)(NUM_SAMPLES);
       bool max_check = true;
       if ( config->channels[i].counter_auto_pol_switch > 0 ) 
       {
@@ -107,7 +107,7 @@ void DRSAnalyzer::Analyze()
     //************************************************************************************
     //If the minimum point is the first sample, then the channel is bad, and we skip it.
     //************************************************************************************
-    if (idx_min == 0) continue;
+    // if (idx_min == 0) continue;
 
     var[chName+"t_peak"] = time[idx_min];
     var[chName+"amp"] = -amp;
@@ -202,10 +202,11 @@ void DRSAnalyzer::Analyze()
       // -------------- Global Time-offsets
       *************************************/
       double myTimeOffset = 0;
-      if (correctForTimeOffsets) 
-      {
-        myTimeOffset = timeOffset[i];
-      }
+      // We need to make the code smarter to handle time offsets
+      // if (correctForTimeOffsets) 
+      // {
+      //   myTimeOffset = timeOffset[i];
+      // }
 
       /************************************
       // -------------- Do the gaussian fit
@@ -284,7 +285,8 @@ void DRSAnalyzer::Analyze()
         for(auto f : config->constant_fraction) 
         {
           unsigned int j_st = j_start;
-          if ( amp*f > start_level ) {
+          if ( amp*f > start_level ) 
+          {
             if ( amp*f > -baseline_RMS && verbose) 
             {
               if(N_warnings< N_warnings_to_print) 
@@ -687,6 +689,7 @@ void DRSAnalyzer::InitLoop()
   std::cout<<"Number of Channels: "<<NUM_CHANNELS<<std::endl;
   NUM_TIMES = 0;
   NUM_SAMPLES = 900;
+  // NUM_SAMPLES = channelMap.begin()->second->size();
   time = std::vector<float>(NUM_SAMPLES);
   for (unsigned int i = 0; i < NUM_SAMPLES; i++){ time[i] = (200.0 / 1000.0) * i; }
 
@@ -737,7 +740,7 @@ void DRSAnalyzer::InitLoop()
     }
   }
 
-  for (auto& ch : channelMap) 
+  for(const auto& ch : channelMap) 
   {
     const auto& chName = ch.first + "_";
 
@@ -748,8 +751,6 @@ void DRSAnalyzer::InitLoop()
       tree->Branch(n, &var[n], n+"/F");
     }
   }
-
-  ResetVar();
 }
 
 int DRSAnalyzer::GetChannelsMeasurement(int i_aux) 
@@ -761,7 +762,7 @@ int DRSAnalyzer::GetChannelsMeasurement(int i_aux)
 
 void DRSAnalyzer::ResetVar() 
 {
-  for(auto& ch : channelMap) 
+  for(const auto& ch : channelMap) 
   {
     const auto& chName = ch.first + "_";
     for(const auto& vn : var_names) 
@@ -774,17 +775,9 @@ void DRSAnalyzer::ResetVar()
 
 void DRSAnalyzer::ResetAnalysisVariables() 
 {
-  unsigned int i = 0;
   for (auto& ch : channelMap) 
   {
-    const auto& chName = ch.first + "_";
-    auto& channel = *ch.second;
-    for(unsigned int j=0; j<NUM_SAMPLES; j++) 
-    {
-      channel[j] = 0;
-      if(i < NUM_TIMES) time[j] = 0;
-    }
-    i++;
+    ch.second->clear();
   }
 }
 
@@ -907,30 +900,3 @@ float DRSAnalyzer::WSInterp(float t, int N, std::vector<float> tn, std::vector<f
   }
   return out;
 };
-
-std::string DRSAnalyzer::split(const std::string& half, const std::string& s, const std::string& h) const
-{
-  if(s.find(h) != std::string::npos)
-  {
-    std::string token;
-    if      ("first"==half) token = s.substr(0, s.find(h));
-    else if ("last" ==half) token = s.substr(s.find(h) + h.length(), std::string::npos);
-    return token;
-  }
-  else
-  {
-    return s;
-  }
-}
-
-void DRSAnalyzer::GetDim(TTree* const tree, const std::string& var, unsigned int& f, unsigned int& s)
-{
-  TBranch* branch = tree->GetBranch(var.c_str());
-  TObjArray *lol = branch->GetListOfLeaves();
-  TLeaf *leaf = (TLeaf*)lol->UncheckedAt(0);
-  std::string title = leaf->GetTitle();
-  std::string firstdim  = split("last", split("first", title, "]"), "[");
-  std::string seconddim = split("first", split("last", title, "]["), "]");
-  f = static_cast<unsigned int>(std::atoi(firstdim.c_str()));
-  s = static_cast<unsigned int>(std::atoi(seconddim.c_str()));
-}
