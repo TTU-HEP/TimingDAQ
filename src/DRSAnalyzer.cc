@@ -1,20 +1,19 @@
 #include "DRSAnalyzer.hh"
 
-using namespace std;
-
 void DRSAnalyzer::Analyze()
 {
+  ResetVar();
+
   /*************************************
   LOOP OVER CHANNELS
   **************************************/
-
-  for(unsigned int i=0; i<NUM_CHANNELS; i++) 
+  unsigned int i = 0;
+  for (auto& ch : channelMap) 
   {
-    ResetVar(i);
-    if ( !config->hasChannel(i) ) 
-    {
-      continue;
-    }
+    const auto& chName = ch.first + "_";
+    auto& channel = *ch.second;
+
+    if ( !config->hasChannel(i) ) continue;
     TString name = Form("pulse_event%d_ch%d", event_n, i);
     
     //-------------------------------------------------------------------------------------
@@ -31,16 +30,16 @@ void DRSAnalyzer::Analyze()
     float baseline = 0;
     for(unsigned int j = bl_st_idx; j < bl_en_idx; j++) 
     {
-        baseline += channel[i][j];
+        baseline += channel[j];
     }
     
-    if(bl_length <=1) cout << "WARNING: Baseline window is trivially short, probably configured incorrectly"<<endl;
+    if(bl_length <=1) std::cout << "WARNING: Baseline window is trivially short, probably configured incorrectly"<<std::endl;
     baseline /= (float) bl_length;
     TF1* f = nullptr;
     if(config->channels[i].algorithm.Contains("HNR")) 
     {
       // Perform a sin fit for the baseline
-      auto gr_bl = TGraph(bl_length, &(time[GetTimeIndex(i)][bl_st_idx]), &(channel[i][bl_st_idx]));
+      auto gr_bl = TGraph(bl_length, &(time[bl_st_idx]), &(channel[bl_st_idx]));
       f = new TF1("f_bl", "[0]+[1]*sin([2]+[3]*x)");
       f->SetParameter(0, baseline);
       f->SetParameter(1, 40./scale_factor);
@@ -50,11 +49,11 @@ void DRSAnalyzer::Analyze()
       auto r = gr_bl.Fit(f, "SQN");
       if (draw_debug_pulses) 
       {
-        cout << "Harmonic Noise Removal:\n";
-        cout << Form("const = %.2f\n", f->GetParameter(0)*scale_factor);
-        cout << Form("A = %.2f\n", f->GetParameter(1)*scale_factor);
-        cout << Form("phi_0 = %.2f\n", f->GetParameter(2));
-        cout << Form("T = %.2f\n", 2*TMath::Pi()/f->GetParameter(3));
+        std::cout << "Harmonic Noise Removal:\n";
+        std::cout << Form("const = %.2f\n", f->GetParameter(0)*scale_factor);
+        std::cout << Form("A = %.2f\n", f->GetParameter(1)*scale_factor);
+        std::cout << Form("phi_0 = %.2f\n", f->GetParameter(2));
+        std::cout << Form("T = %.2f\n", 2*TMath::Pi()/f->GetParameter(3));
       }
 
       baseline = f->GetParameter(0);
@@ -74,32 +73,32 @@ void DRSAnalyzer::Analyze()
         config->channels[i].v_baseline.push_back(baseline);
       }
     }
-    var["baseline"][i] = scale_factor * baseline;
+    var[chName+"baseline"] = scale_factor * baseline;
     // ------------- Get minimum position, max amplitude and scale the signal
     unsigned int idx_min = 0;
     float amp = 0;
-    for(unsigned int j=0; j<NUM_SAMPLES; j++) {
+    for(unsigned int j=0; j<NUM_SAMPLES; j++) 
+    {
       if(config->channels[i].algorithm.Contains("HNR")) 
       {
-        channel[i][j] = scale_factor * (channel[i][j] - f->Eval(time[GetTimeIndex(i)][j]));//baseline subtraction
+        channel[j] = scale_factor * (channel[j] - f->Eval(time[j]));//baseline subtraction
       }
-      else channel[i][j] = scale_factor * (channel[i][j] - baseline);//baseline subtraction
+      else channel[j] = scale_factor * (channel[j] - baseline);//baseline subtraction
       bool range_check = j>bl_st_idx+bl_length && j<(int)(0.9*NUM_SAMPLES);
       bool max_check = true;
       if ( config->channels[i].counter_auto_pol_switch > 0 ) 
       {
-        max_check = fabs(channel[i][j]) > fabs(amp);
+        max_check = fabs(channel[j]) > fabs(amp);
       }
       else 
       {
-        max_check = channel[i][j] < amp;
+        max_check = channel[j] < amp;
       }
 
       if(( range_check && max_check) || j == bl_st_idx+bl_length) 
       {
-      // if(( j>bl_st_idx+bl_length && j<(int)(0.9*NUM_SAMPLES) && fabs(channel[i][j]) > fabs(amp)) || j == bl_st_idx+bl_length) {
         idx_min = j;
-        amp = channel[i][j];
+        amp = channel[j];
       }
     }
 
@@ -111,22 +110,22 @@ void DRSAnalyzer::Analyze()
     //************************************************************************************
     if (idx_min == 0) continue;
 
-    var["t_peak"][i] = time[GetTimeIndex(i)][idx_min];
-    var["amp"][i] = -amp;
+    var[chName+"t_peak"] = time[idx_min];
+    var[chName+"amp"] = -amp;
 
     float baseline_RMS = 0;
-    var["noise"][i] = channel[i][bl_st_idx+5];
+    var[chName+"noise"] = channel[bl_st_idx+5];
     for(unsigned int j=bl_st_idx; j<=(bl_st_idx+bl_length); j++) 
     {
-      baseline_RMS += channel[i][j]*channel[i][j];
+      baseline_RMS += channel[j]*channel[j];
     }
     baseline_RMS = sqrt(baseline_RMS/bl_length);
-    var["baseline_RMS"][i] = baseline_RMS;
+    var[chName+"baseline_RMS"] = baseline_RMS;
 
     // --------------- Define pulse graph
     float * yerr = new float[NUM_SAMPLES];
-    for(unsigned j = 0; j < NUM_SAMPLES; j++) yerr[j] = 0 * var["baseline_RMS"][i];
-    TGraphErrors* pulse = new TGraphErrors(NUM_SAMPLES, time[GetTimeIndex(i)], channel[i], 0, yerr);
+    for(unsigned j = 0; j < NUM_SAMPLES; j++) yerr[j] = 0 * var[chName+"baseline_RMS"];
+    TGraphErrors* pulse = new TGraphErrors(NUM_SAMPLES, time.data(), channel.data(), 0, yerr);
     pulse->SetNameTitle("g_"+name, "g_"+name);
 
     // Variables used both by analysis and pulse drawer
@@ -138,13 +137,13 @@ void DRSAnalyzer::Analyze()
     float Re_b, Re_slope;
     bool fittable = true;
     fittable *= idx_min < (int)(NUM_SAMPLES*0.8);
-    fittable *= fabs(amp) > 3 * baseline_RMS;
-    fittable *= fabs(channel[i][idx_min+1]) > 2*baseline_RMS;
-    fittable *= fabs(channel[i][idx_min-1]) > 2*baseline_RMS;
-    fittable *= fabs(channel[i][idx_min+2]) > 2*baseline_RMS;
-    fittable *= fabs(channel[i][idx_min-2]) > 2*baseline_RMS;
-    // fittable *= fabs(channel[i][idx_min+3]) > 2*baseline_RMS;
-    // fittable *= fabs(channel[i][idx_min-3]) > 2*baseline_RMS;
+    fittable *= fabs(amp) > 8 * baseline_RMS;
+    fittable *= fabs(channel[idx_min+1]) > 3*baseline_RMS;
+    fittable *= fabs(channel[idx_min-1]) > 3*baseline_RMS;
+    fittable *= fabs(channel[idx_min+2]) > 2*baseline_RMS;
+    fittable *= fabs(channel[idx_min-2]) > 2*baseline_RMS;
+    // fittable *= fabs(channel[idx_min+3]) > 2*baseline_RMS;
+    // fittable *= fabs(channel[idx_min-3]) > 2*baseline_RMS;
     
     //-------------------------------------------------------------
     //If pulse is still positive change it automatically
@@ -152,25 +151,25 @@ void DRSAnalyzer::Analyze()
     //-------------------------------------------------------------
     if( fittable  && !config->channels[i].algorithm.Contains("None")) 
     {
-      if( var["amp"][i] < 0 && config->channels[i].counter_auto_pol_switch > 0 ) 
+      if( var[chName+"amp"] < 0 && config->channels[i].counter_auto_pol_switch > 0 ) 
       {
         config->channels[i].polarity *= -1;
         amp = -amp;
-        var["amp"][i] = -var["amp"][i];
+        var[chName+"amp"] = -var[chName+"amp"];
         scale_factor = -scale_factor;
-        var["baseline"][i] = -var["baseline"][i];
+        var[chName+"baseline"] = -var[chName+"baseline"];
         for(unsigned int j=0; j<NUM_SAMPLES; j++) 
         {
-          channel[i][j] = -channel[i][j];
+          channel[j] = -channel[j];
         }
         delete pulse;
-        pulse = new TGraphErrors(NUM_SAMPLES, time[GetTimeIndex(i)], channel[i], 0, yerr);
+        pulse = new TGraphErrors(NUM_SAMPLES, time.data(), channel.data(), 0, yerr);
         pulse->SetNameTitle("g_"+name, "g_"+name);
 
         if ( config->channels[i].counter_auto_pol_switch == 10 ) 
         {
-          cout << "[WARNING] Channel " << i << ": automatic polarity switched more than 10 times" << endl;
-          cout << "[WARNING] Channel " << i << ": gonna keep inverting it for you. Better check your pulse polarity!!" << endl;
+          std::cout << "[WARNING] Channel " << i << ": automatic polarity switched more than 10 times" << std::endl;
+          std::cout << "[WARNING] Channel " << i << ": gonna keep inverting it for you. Better check your pulse polarity!!" << std::endl;
         }
         config->channels[i].counter_auto_pol_switch ++;
       }
@@ -180,26 +179,26 @@ void DRSAnalyzer::Analyze()
        //Get 10% of the amplitude crossings
        ************************************
        */
-      j_10_pre = GetIdxFirstCross(amp*0.1, channel[i], idx_min, -1);
-      j_10_post = GetIdxFirstCross(amp*0.1, channel[i], idx_min, +1);
+      j_10_pre = GetIdxFirstCross(amp*0.1, channel, idx_min, -1);
+      j_10_post = GetIdxFirstCross(amp*0.1, channel, idx_min, +1);
 
       // -------------- Integrate the pulse
-      j_area_pre = GetIdxFirstCross(amp*0.05, channel[i], idx_min, -1);
-      j_area_post = GetIdxFirstCross(0. , channel[i], idx_min, +1);
-      var["integral"][i] = GetPulseIntegral(channel[i], time[GetTimeIndex(i)], j_area_pre, j_area_post);
-      var["intfull"][i] = GetPulseIntegral(channel[i], time[GetTimeIndex(i)], 5, NUM_SAMPLES-5);
+      j_area_pre = GetIdxFirstCross(amp*0.05, channel, idx_min, -1);
+      j_area_post = GetIdxFirstCross(0. , channel, idx_min, +1);
+      var[chName+"integral"] = GetPulseIntegral(channel, time, j_area_pre, j_area_post);
+      var[chName+"intfull"] = GetPulseIntegral(channel, time, 5, NUM_SAMPLES-5);
 
       // -------------- Compute rise and falling time
       float* coeff;
 
-      j_90_pre = GetIdxFirstCross(amp*0.9, channel[i], j_10_pre, +1);
-      AnalyticalPolinomialSolver(j_90_pre-j_10_pre+1, &(time[GetTimeIndex(i)][j_10_pre]), &(channel[i][j_10_pre]), 1, coeff);
-      var["risetime"][i] = abs(0.8*var["amp"][i] / coeff[1]);
+      j_90_pre = GetIdxFirstCross(amp*0.9, channel, j_10_pre, +1);
+      AnalyticalPolinomialSolver(j_90_pre-j_10_pre+1, &(time[j_10_pre]), &(channel[j_10_pre]), 1, coeff);
+      var[chName+"risetime"] = abs(0.8*var[chName+"amp"] / coeff[1]);
       delete [] coeff;
 
-      j_90_post = GetIdxFirstCross(amp*0.9, channel[i], j_10_post, -1);
-      AnalyticalPolinomialSolver(j_10_post-j_90_post+1, &(time[GetTimeIndex(i)][j_90_post]), &(channel[i][j_90_post]), 1, coeff);
-      var["decaytime"][i] = coeff[1];
+      j_90_post = GetIdxFirstCross(amp*0.9, channel, j_10_post, -1);
+      AnalyticalPolinomialSolver(j_10_post-j_90_post+1, &(time[j_90_post]), &(channel[j_90_post]), 1, coeff);
+      var[chName+"decaytime"] = coeff[1];
       delete [] coeff;
 
       /************************************
@@ -217,20 +216,20 @@ void DRSAnalyzer::Analyze()
       if( config->channels[i].algorithm.Contains("G") ) 
       {
         float frac = config->channels[i].gaus_fraction;
-        unsigned int j_down = GetIdxFirstCross(amp*frac, channel[i], idx_min, -1);
-        unsigned int j_up = GetIdxFirstCross(amp*frac, channel[i], idx_min, +1);
+        unsigned int j_down = GetIdxFirstCross(amp*frac, channel, idx_min, -1);
+        unsigned int j_up = GetIdxFirstCross(amp*frac, channel, idx_min, +1);
         if( j_up - j_down < 4 ) 
         {
           j_up = idx_min + 1;
           j_down = idx_min - 1;
         }
 
-        TF1* fpeak = new TF1("fpeak"+name, "gaus", time[GetTimeIndex(i)][j_down], time[GetTimeIndex(i)][j_up]);
+        TF1* fpeak = new TF1("fpeak"+name, "gaus", time[j_down], time[j_up]);
 
-        float ext_sigma = time[GetTimeIndex(i)][j_up] - time[GetTimeIndex(i)][j_down];
+        float ext_sigma = time[j_up] - time[j_down];
         if (amp*frac < -baseline_RMS) ext_sigma *= 0.25;
         fpeak->SetParameter(0, amp * sqrt(2*3.14) * ext_sigma );
-        fpeak->SetParameter(1, time[GetTimeIndex(i)][idx_min]);
+        fpeak->SetParameter(1, time[idx_min]);
         fpeak->SetParameter(2, ext_sigma);
         fpeak->SetLineColor(kBlue);
 
@@ -239,9 +238,9 @@ void DRSAnalyzer::Analyze()
         else opt += "QN0";
         pulse->Fit("fpeak"+name, opt);
 
-        var["gaus_mean"][i] = fpeak->GetParameter(1) + myTimeOffset;
-        var["gaus_sigma"][i] = fpeak->GetParameter(2);
-        var["gaus_chi2"][i] = pulse->Chisquare(fpeak, "R");
+        var[chName+"gaus_mean"] = fpeak->GetParameter(1) + myTimeOffset;
+        var[chName+"gaus_sigma"] = fpeak->GetParameter(2);
+        var[chName+"gaus_chi2"] = pulse->Chisquare(fpeak, "R");
 
         delete fpeak;
       }
@@ -250,10 +249,10 @@ void DRSAnalyzer::Analyze()
       ********************************/
       if(config->channels[i].algorithm.Contains("Re") ) 
       {
-        unsigned int i_min = GetIdxFirstCross(config->channels[i].re_bounds[0]*amp, channel[i], idx_min, -1); // GetIdxClosest(min(channel[i]), channel[i], idx_min, -1);
-        unsigned int i_max = GetIdxFirstCross(config->channels[i].re_bounds[1]*amp, channel[i], i_min  , +1);
-        float t_min = time[GetTimeIndex(i)][i_min];
-        float t_max = time[GetTimeIndex(i)][i_max];
+        unsigned int i_min = GetIdxFirstCross(config->channels[i].re_bounds[0]*amp, channel, idx_min, -1);
+        unsigned int i_max = GetIdxFirstCross(config->channels[i].re_bounds[1]*amp, channel, i_min  , +1);
+        float t_min = time[i_min];
+        float t_max = time[i_max];
 
         TF1* flinear = new TF1("flinear"+name, "[0]*x+[1]", t_min, t_max);
         flinear->SetLineColor(2);
@@ -267,12 +266,12 @@ void DRSAnalyzer::Analyze()
 
         for ( auto f : config->constant_fraction ) 
         {
-          var[Form("linear_RE_%d", (int)(100*f))][i] = (f*amp-Re_b)/Re_slope + myTimeOffset;
+          var[chName+Form("linear_RE_%d", (int)(100*f))] = (f*amp-Re_b)/Re_slope + myTimeOffset;
         }
 
         for ( auto thr : config->constant_threshold ) 
         {
-            var[Form("linear_RE__%dmV", (int)(fabs(thr)))][i] = (thr-Re_b)/Re_slope + myTimeOffset;
+            var[chName+Form("linear_RE__%dmV", (int)(fabs(thr)))] = (thr-Re_b)/Re_slope + myTimeOffset;
         }
 
         delete flinear;
@@ -283,7 +282,7 @@ void DRSAnalyzer::Analyze()
       if ( config->constant_fraction.size() ) 
       {
         float start_level =  - 3 * baseline_RMS;
-        unsigned int j_start =  GetIdxFirstCross( start_level, channel[i], idx_min, -1);
+        unsigned int j_start =  GetIdxFirstCross( start_level, channel, idx_min, -1);
 
         for(auto f : config->constant_fraction) 
         {
@@ -294,19 +293,19 @@ void DRSAnalyzer::Analyze()
               if(N_warnings< N_warnings_to_print) 
               {
                 N_warnings++;
-                cout << Form("[WARNING] ev:%d ch:%d - fraction %.2f below noise RMS", event_n, i, f) << endl;
+                std::cout << Form("[WARNING] ev:%d ch:%d - fraction %.2f below noise RMS", event_n, i, f) << std::endl;
               }
               else if (N_warnings_to_print == N_warnings) 
               {
                 N_warnings++;
-                cout << "[WARNING] Max number of warnings passed. No more warnings will be printed." << endl;;
+                std::cout << "[WARNING] Max number of warnings passed. No more warnings will be printed." << std::endl;;
               }
             }
-            j_st =  GetIdxFirstCross( amp*f, channel[i], idx_min, -1);
+            j_st =  GetIdxFirstCross( amp*f, channel, idx_min, -1);
           }
 
-          unsigned int j_close = GetIdxFirstCross(amp*f, channel[i], j_st, +1);
-          if ( fabs(channel[i][j_close-1] - f*amp) < fabs(channel[i][j_close] - f*amp) ) j_close--;
+          unsigned int j_close = GetIdxFirstCross(amp*f, channel, j_st, +1);
+          if ( fabs(channel[j_close-1] - f*amp) < fabs(channel[j_close] - f*amp) ) j_close--;
 
           for(auto n : config->channels[i].PL_deg) 
           {
@@ -324,7 +323,7 @@ void DRSAnalyzer::Analyze()
 
             if( j_close < span_j || j_close + span_j >= NUM_SAMPLES ) 
             {
-              cout << Form("[WARNING] evt %d ch %d:  Short span around the closest point. Analytical fit not performed.", event_n, i) << endl;
+              std::cout << Form("[WARNING] evt %d ch %d:  Short span around the closest point. Analytical fit not performed.", event_n, i) << std::endl;
               continue;
             }
 
@@ -334,9 +333,9 @@ void DRSAnalyzer::Analyze()
             {
               N_add++;
             }
-            AnalyticalPolinomialSolver( 2*span_j + N_add , &(channel[i][j_close - span_j]), &(time[GetTimeIndex(i)][j_close - span_j]), n, coeff);
+            AnalyticalPolinomialSolver( 2*span_j + N_add , &(channel[j_close - span_j]), &(time[j_close - span_j]), n, coeff);
 
-            var[Form("LP%d_%d", n, (int)(100*f))][i] = PolyEval(f*amp, coeff, n) + myTimeOffset;
+            var[chName+Form("LP%d_%d", n, (int)(100*f))] = PolyEval(f*amp, coeff, n) + myTimeOffset;
 
             if(draw_debug_pulses) 
             {
@@ -350,7 +349,7 @@ void DRSAnalyzer::Analyze()
       if ( config->constant_threshold.size() ) 
       {
         float start_level =  - 3 * baseline_RMS;
-        unsigned int j_start =  GetIdxFirstCross( start_level, channel[i], idx_min, -1);
+        unsigned int j_start =  GetIdxFirstCross( start_level, channel, idx_min, -1);
 
         for(auto thr : config->constant_threshold) 
         {
@@ -363,19 +362,19 @@ void DRSAnalyzer::Analyze()
               if(N_warnings< N_warnings_to_print) 
               {
                 N_warnings++;
-                cout << Form("[WARNING] ev:%d ch:%d - thr %.2f mV below noise RMS", event_n, i, thr) << endl;
+                std::cout << Form("[WARNING] ev:%d ch:%d - thr %.2f mV below noise RMS", event_n, i, thr) << std::endl;
               }
               else if (N_warnings_to_print == N_warnings) 
               {
                 N_warnings++;
-                cout << "[WARNING] Max number of warnings passed. No more warnings will be printed." << endl;;
+                std::cout << "[WARNING] Max number of warnings passed. No more warnings will be printed." << std::endl;;
               }
             }
-            j_st =  GetIdxFirstCross( thr, channel[i], idx_min, -1);
+            j_st =  GetIdxFirstCross( thr, channel, idx_min, -1);
           }
 
-          unsigned int j_close = GetIdxFirstCross(thr, channel[i], j_st, +1);
-          if ( fabs(channel[i][j_close-1] - thr) < fabs(channel[i][j_close] - thr) ) j_close--;
+          unsigned int j_close = GetIdxFirstCross(thr, channel, j_st, +1);
+          if ( fabs(channel[j_close-1] - thr) < fabs(channel[j_close] - thr) ) j_close--;
 
           for(auto n : config->channels[i].PL_deg) 
           {
@@ -395,8 +394,8 @@ void DRSAnalyzer::Analyze()
             {
               if (verbose) 
               {
-                cout << Form("[WARNING] evt %d ch %d:  Short span around the closest point. Analytical fit not performed.", event_n, i) << endl;
-                cout << j_close << "  " << span_j << "  " << thr << endl;
+                std::cout << Form("[WARNING] evt %d ch %d:  Short span around the closest point. Analytical fit not performed.", event_n, i) << std::endl;
+                std::cout << j_close << "  " << span_j << "  " << thr << std::endl;
               }
               continue;
             }
@@ -407,9 +406,9 @@ void DRSAnalyzer::Analyze()
             {
               N_add++;
             }
-            AnalyticalPolinomialSolver( 2*span_j + N_add , &(channel[i][j_close - span_j]), &(time[GetTimeIndex(i)][j_close - span_j]), n, coeff);
+            AnalyticalPolinomialSolver( 2*span_j + N_add , &(channel[j_close - span_j]), &(time[j_close - span_j]), n, coeff);
 
-            var[Form("LP%d_%dmV", n, (int)(fabs(thr)))][i] = PolyEval(thr, coeff, n) + myTimeOffset;
+            var[chName+Form("LP%d_%dmV", n, (int)(fabs(thr)))] = PolyEval(thr, coeff, n) + myTimeOffset;
 
             if(draw_debug_pulses) 
             {
@@ -427,7 +426,7 @@ void DRSAnalyzer::Analyze()
     **********************************************/
     if(draw_debug_pulses) 
     {
-      cout << "========= Event: " << event_n << " - ch: " << i << endl;
+      std::cout << "========= Event: " << event_n << " - ch: " << i << std::endl;
 
       TCanvas* c =  new TCanvas("c_"+name, "c_"+name, 1600, 600);
       c->Divide(2);
@@ -447,71 +446,70 @@ void DRSAnalyzer::Analyze()
       line->SetLineWidth(1);
       line->SetLineColor(46);
       line->SetLineStyle(7);
-      line->DrawLine(time[GetTimeIndex(i)][0], 0, time[GetTimeIndex(i)][NUM_SAMPLES-1], 0);
+      line->DrawLine(time[0], 0, time[NUM_SAMPLES-1], 0);
       line->SetLineStyle(1);
-      line->DrawLine(time[GetTimeIndex(i)][bl_st_idx], 0, time[GetTimeIndex(i)][bl_st_idx+bl_length], 0);
+      line->DrawLine(time[bl_st_idx], 0, time[bl_st_idx+bl_length], 0);
       line->SetLineColor(47);
-      line->DrawLine(time[GetTimeIndex(i)][0], var["baseline_RMS"][i], time[GetTimeIndex(i)][NUM_SAMPLES-1], var["baseline_RMS"][i]);
-      line->DrawLine(time[GetTimeIndex(i)][0], -var["baseline_RMS"][i], time[GetTimeIndex(i)][NUM_SAMPLES-1], -var["baseline_RMS"][i]);
+      line->DrawLine(time[0], var[chName+"baseline_RMS"], time[NUM_SAMPLES-1], var[chName+"baseline_RMS"]);
+      line->DrawLine(time[0], -var[chName+"baseline_RMS"], time[NUM_SAMPLES-1], -var[chName+"baseline_RMS"]);
 
       // Draw peak
       line->SetLineColor(8);
       line->SetLineStyle(4);
-      line->DrawLine(time[GetTimeIndex(i)][0], amp, var["t_peak"][i], amp);
-      line->DrawLine(var["t_peak"][i], 0, var["t_peak"][i], amp);
+      line->DrawLine(time[0], amp, var[chName+"t_peak"], amp);
+      line->DrawLine(var[chName+"t_peak"], 0, var[chName+"t_peak"], amp);
 
       // Draw 10% and 90% lines;
       TLine* line_lvs = new TLine();
       line_lvs->SetLineWidth(1);
       line_lvs->SetLineColor(4);
-      line_lvs->DrawLine(time[GetTimeIndex(i)][0], 0.1*amp, time[GetTimeIndex(i)][NUM_SAMPLES-1], 0.1*amp);
-      line_lvs->DrawLine(time[GetTimeIndex(i)][0], 0.9*amp, time[GetTimeIndex(i)][NUM_SAMPLES-1], 0.9*amp);
+      line_lvs->DrawLine(time[0], 0.1*amp, time[NUM_SAMPLES-1], 0.1*amp);
+      line_lvs->DrawLine(time[0], 0.9*amp, time[NUM_SAMPLES-1], 0.9*amp);
       // Draw constant fractions lines
       line_lvs->SetLineColor(38);
       line_lvs->SetLineStyle(10);
       for(auto f : config->constant_fraction) 
       {
-        line_lvs->DrawLine(time[GetTimeIndex(i)][0], f*amp, time[GetTimeIndex(i)][NUM_SAMPLES-1], f*amp);
+        line_lvs->DrawLine(time[0], f*amp, time[NUM_SAMPLES-1], f*amp);
       }
       // Draw constant threshold lines
       line_lvs->SetLineColor(28);
       for(auto thr : config->constant_threshold) 
       {
-        line_lvs->DrawLine(time[GetTimeIndex(i)][0], thr, time[GetTimeIndex(i)][NUM_SAMPLES-1], thr);
+        line_lvs->DrawLine(time[0], thr, time[NUM_SAMPLES-1], thr);
       }
-
 
       // Draw integral area
       int N_tot_integral = j_area_post-j_area_pre;
       if( N_tot_integral > 0 ) 
       {
-        vector<float> aux_time = {time[GetTimeIndex(i)][j_area_pre]};
+        vector<float> aux_time = {time[j_area_pre]};
         vector<float> aux_volt = {0};
         for(unsigned int j = j_area_pre; j <= j_area_post; j++) 
         {
-          aux_time.push_back(time[GetTimeIndex(i)][j]);
-          aux_volt.push_back(channel[i][j]);
+          aux_time.push_back(time[j]);
+          aux_volt.push_back(channel[j]);
         }
-        aux_time.push_back(time[GetTimeIndex(i)][j_area_post]);
+        aux_time.push_back(time[j_area_post]);
         aux_volt.push_back(0);
         TGraph * integral_pulse = new TGraph(aux_time.size(), &(aux_time[0]), &(aux_volt[0]));
         integral_pulse->SetFillColor(40);
         integral_pulse->SetFillStyle(3144);
         integral_pulse->Draw("FC");
-        TText* t_int = new TText(var["t_peak"][i]+3, amp, Form("Integral Pulse = %1.2f,  Integral Full =%1.2f ", -var["integral"][i], -var["intfull"][i]));
+        TText* t_int = new TText(var[chName+"t_peak"]+3, amp, Form("Integral Pulse = %1.2f,  Integral Full =%1.2f ", -var[chName+"integral"], -var[chName+"intfull"]));
         t_int->SetTextAlign(kHAlignLeft+kVAlignBottom);
         t_int->Draw();
 
-        TText* aNt = new TText(var["t_peak"][i]+3, amp+6, Form("LP2_50 = %1.2f, t peak = %1.2f,  amp =%1.2f ", var["LP2_50"][i], var["t_peak"][i], amp));
+        TText* aNt = new TText(var[chName+"t_peak"]+3, amp+6, Form("LP2_50 = %1.2f, t peak = %1.2f,  amp =%1.2f ", var[chName+"LP2_50"], var[chName+"t_peak"], amp));
         aNt->SetTextAlign(kHAlignLeft+kVAlignBottom);
         aNt->Draw();
 
         // Draw 90% and 10% pre and post points
         TGraph* gr_pre_post = new TGraph(4);
-        gr_pre_post->SetPoint(0, time[GetTimeIndex(i)][j_10_pre], channel[i][j_10_pre]);
-        gr_pre_post->SetPoint(1, time[GetTimeIndex(i)][j_90_pre], channel[i][j_90_pre]);
-        gr_pre_post->SetPoint(2, time[GetTimeIndex(i)][j_10_post], channel[i][j_10_post]);
-        gr_pre_post->SetPoint(3, time[GetTimeIndex(i)][j_90_post], channel[i][j_90_post]);
+        gr_pre_post->SetPoint(0, time[j_10_pre], channel[j_10_pre]);
+        gr_pre_post->SetPoint(1, time[j_90_pre], channel[j_90_pre]);
+        gr_pre_post->SetPoint(2, time[j_10_post], channel[j_10_post]);
+        gr_pre_post->SetPoint(3, time[j_90_post], channel[j_90_post]);
         gr_pre_post->SetMarkerColor(4);
         gr_pre_post->Draw("P*");
 
@@ -522,13 +520,13 @@ void DRSAnalyzer::Analyze()
 
         if( config->channels[i].algorithm.Contains("Re") ) 
         {
-          unsigned int i_min = GetIdxFirstCross(config->channels[i].re_bounds[0]*amp, channel[i], idx_min, -1);
-          unsigned int i_max = GetIdxFirstCross(config->channels[i].re_bounds[1]*amp, channel[i], i_min, +1);
+          unsigned int i_min = GetIdxFirstCross(config->channels[i].re_bounds[0]*amp, channel, idx_min, -1);
+          unsigned int i_max = GetIdxFirstCross(config->channels[i].re_bounds[1]*amp, channel, i_min, +1);
           float y[2], x[2];
-          x[0] = channel[i][i_min];
-          x[1] = channel[i][i_max];
-          y[0] = (channel[i][i_min] - Re_b)/Re_slope;
-          y[1] = (channel[i][i_max] - Re_b)/Re_slope;
+          x[0] = channel[i_min];
+          x[1] = channel[i_max];
+          y[0] = (channel[i_min] - Re_b)/Re_slope;
+          y[1] = (channel[i_max] - Re_b)/Re_slope;
 
           TGraph* gr_Re = new TGraph(2, x, y);
 
@@ -540,8 +538,7 @@ void DRSAnalyzer::Analyze()
 
         unsigned int j_begin = j_10_pre - 6;
         unsigned int j_span = j_90_pre - j_10_pre + 10;
-        //if(!(j_begin >= 0 && j_begin < sizeof(time) / sizeof(time[0]))) continue;
-        TGraphErrors* inv_pulse = new TGraphErrors(j_span, &(channel[i][j_begin]), &(time[GetTimeIndex(i)][j_begin]), yerr);
+        TGraphErrors* inv_pulse = new TGraphErrors(j_span, &(channel[j_begin]), &(time[j_begin]), yerr);
         inv_pulse->SetNameTitle("g_inv"+name, "g_inv"+name);
         inv_pulse->SetMarkerStyle(5);
         inv_pulse->GetXaxis()->SetTitle("Amplitude [mV]");
@@ -555,8 +552,8 @@ void DRSAnalyzer::Analyze()
         {
           for(unsigned int kk = 0; kk < overstep; kk++) 
           {
-            float tt = time[GetTimeIndex(i)][jj] + (time[GetTimeIndex(i)][jj+1] - time[GetTimeIndex(i)][jj]) * kk/overstep;
-            float cc = WSInterp(tt, NUM_SAMPLES, time[GetTimeIndex(i)], channel[i]);
+            float tt = time[jj] + (time[jj+1] - time[jj]) * kk/overstep;
+            float cc = WSInterp(tt, NUM_SAMPLES, time, channel);
 
             t_WS.push_back(tt);
             c_WS.push_back(cc);
@@ -568,8 +565,8 @@ void DRSAnalyzer::Analyze()
         // inv_pulse_WS->Draw("P");
 
         TGraph* gr_inv_pre_post = new TGraph(2);
-        gr_inv_pre_post->SetPoint(0, channel[i][j_10_pre], time[GetTimeIndex(i)][j_10_pre]);
-        gr_inv_pre_post->SetPoint(1, channel[i][j_90_pre], time[GetTimeIndex(i)][j_90_pre]);
+        gr_inv_pre_post->SetPoint(0, channel[j_10_pre], time[j_10_pre]);
+        gr_inv_pre_post->SetPoint(1, channel[j_90_pre], time[j_90_pre]);
         gr_inv_pre_post->SetMarkerColor(4);
         gr_inv_pre_post->Draw("P*");
 
@@ -585,16 +582,16 @@ void DRSAnalyzer::Analyze()
         {
           float f = config->constant_fraction[kk];
           line_lvs->SetLineColor(frac_colors[kk]);
-          line_lvs->DrawLine(amp*f, time[GetTimeIndex(i)][j_begin], amp*f, time[GetTimeIndex(i)][j_90_pre + 3]);
+          line_lvs->DrawLine(amp*f, time[j_begin], amp*f, time[j_90_pre + 3]);
           for(auto n : config->channels[i].PL_deg) 
           {
             vector<float> polyval;
             for(unsigned int j = poly_bounds[count].first; j <= poly_bounds[count].second; j++) 
             {
-              polyval.push_back(PolyEval(channel[i][j], coeff_poly_fit[count], n));
+              polyval.push_back(PolyEval(channel[j], coeff_poly_fit[count], n));
             }
 
-            TGraph* g_poly = new TGraph(polyval.size(), &(channel[i][poly_bounds[count].first]), &(polyval[0]) );
+            TGraph* g_poly = new TGraph(polyval.size(), &(channel[poly_bounds[count].first]), &(polyval[0]) );
             g_poly->SetLineColor(frac_colors[kk]);
             g_poly->SetLineWidth(2);
             g_poly->SetLineStyle(7);
@@ -609,16 +606,16 @@ void DRSAnalyzer::Analyze()
           float thr = config->constant_threshold[kk];
           if (thr < amp ) continue;
           line_lvs->SetLineColor(frac_colors[kk + config->constant_fraction.size()]);
-          line_lvs->DrawLine(thr, time[GetTimeIndex(i)][j_begin], thr, time[GetTimeIndex(i)][j_90_pre + 3]);
+          line_lvs->DrawLine(thr, time[j_begin], thr, time[j_90_pre + 3]);
           for(auto n : config->channels[i].PL_deg) 
           {
             vector<float> polyval;
             for(unsigned int j = poly_bounds[count].first; j <= poly_bounds[count].second; j++) 
             {
-              polyval.push_back(PolyEval(channel[i][j], coeff_poly_fit[count], n));
+              polyval.push_back(PolyEval(channel[j], coeff_poly_fit[count], n));
             }
 
-            TGraph* g_poly = new TGraph(polyval.size(), &(channel[i][poly_bounds[count].first]), &(polyval[0]) );
+            TGraph* g_poly = new TGraph(polyval.size(), &(channel[poly_bounds[count].first]), &(polyval[0]) );
             g_poly->SetLineColor(frac_colors[kk + config->constant_fraction.size()]);
             g_poly->SetLineWidth(2);
             g_poly->SetLineStyle(7);
@@ -636,150 +633,130 @@ void DRSAnalyzer::Analyze()
 
     delete [] yerr;
     delete pulse;
+    i++;
   }
 }
 
 void DRSAnalyzer::InitLoop() 
 {
-    /*
-    ************************
-    Define PULSHAPES
-    ************************
-    */
-    std::cout << "Define pulse shapes" << std::endl;
-    AUX_time = new float[NUM_TIMES*NUM_SAMPLES];
-    AUX_channel = new float[NUM_CHANNELS*NUM_SAMPLES];
+  for (const auto& name : branch_names_OnlyCopy) 
+  {
+      auto* br = tree_in->GetBranch(name);
+      auto* leaf = br->GetLeaf(name);
+      const TString& typeName = leaf->GetTypeName();
+      void* buffer = nullptr;
 
-    time    = new float*[NUM_TIMES];
-    channel = new float*[NUM_CHANNELS];
-    timeOffset = new float[NUM_CHANNELS];
+      if (typeName == "Int_t") {
+          buffer = new Int_t;
+          tree_in->SetBranchAddress(name, (Int_t*)buffer);
+          tree->Branch(name, (Int_t*)buffer, name + "/I");
+      } else if (typeName == "UInt_t") {
+          buffer = new UInt_t;
+          tree_in->SetBranchAddress(name, (UInt_t*)buffer);
+          tree->Branch(name, (UInt_t*)buffer, name + "/i");
+      } else if (typeName == "ULong64_t") {
+          buffer = new ULong64_t;
+          tree_in->SetBranchAddress(name, (ULong64_t*)buffer);
+          tree->Branch(name, (ULong64_t*)buffer, name + "/l");
+      } else if (typeName == "Float_t") {
+          buffer = new Float_t;
+          tree_in->SetBranchAddress(name, (Float_t*)buffer);
+          tree->Branch(name, (Float_t*)buffer, name + "/F");
+      } else if (typeName == "Double_t") {
+          buffer = new Double_t;
+          tree_in->SetBranchAddress(name, (Double_t*)buffer);
+          tree->Branch(name, (Double_t*)buffer, name + "/D");
+      } else if (typeName.BeginsWith("vector")) {
+          auto* vec = new std::vector<float>;
+          buffer = vec;
+          tree_in->SetBranchAddress(name, &vec);
+          tree->Branch(name, &vec);
+      } else {
+          std::cerr << "Unsupported type: " << typeName << " for branch " << name << std::endl;
+          continue;
+      }
 
-    if ( NUM_F_SAMPLES > 0 )
+      branch_buffers[name] = buffer;
+
+      std::cout<<"Old Variables: "<<name<<std::endl;
+  }
+
+  for(auto& [name, channel] : channelMap) 
+  {
+    tree_in->SetBranchAddress(name, &channel);
+  }
+  tree_in->GetEntry(0);
+
+  NUM_CHANNELS = channelMap.size();
+  std::cout<<"Number of Channels: "<<NUM_CHANNELS<<std::endl;
+  NUM_TIMES = 0;
+  NUM_SAMPLES = 900;
+  time = std::vector<float>(NUM_SAMPLES);
+  for (unsigned int i = 0; i < NUM_SAMPLES; i++){ time[i] = (200.0 / 1000.0) * i; }
+  // for (unsigned int i = 0; i < NUM_CHANNELS; i++){ active_ch.emplace_back(i); }
+
+  bool at_least_1_gaus_fit = false;
+  bool at_least_1_rising_edge = false;
+  int at_least_1_LP[3] = {false};
+  for(auto c : config->channels) 
+  {
+    if( c.second.algorithm.Contains("G")) at_least_1_gaus_fit = true;
+    if( c.second.algorithm.Contains("Re")) at_least_1_rising_edge = true;
+    if( c.second.algorithm.Contains("LP1")) at_least_1_LP[0] = true;
+    if( c.second.algorithm.Contains("LP2")) at_least_1_LP[1] = true;
+    if( c.second.algorithm.Contains("LP3")) at_least_1_LP[2] = true;
+  }
+
+  for(unsigned int i = 0; i< 3; i++) 
+  {
+    if(at_least_1_LP[i]) 
     {
-      AUX_channel_spectrum = new float[NUM_CHANNELS*NUM_F_SAMPLES];
-      channel_spectrum     = new float*[NUM_F_SAMPLES];
-      frequency = new float[NUM_F_SAMPLES];
-    }
-
-    for(unsigned int i=0; i<NUM_CHANNELS; i++)
-    {
-      channel[i] = &(AUX_channel[i*NUM_SAMPLES]);
-      if(i<NUM_TIMES) time[i] = &(AUX_time[i*NUM_SAMPLES]);
-      if ( NUM_F_SAMPLES ) channel_spectrum[i] = &(AUX_channel_spectrum[i*NUM_F_SAMPLES]);
-    }
-
-    if ( NUM_F_SAMPLES > 0 )
-    {
-      float f_step = (F_HIGH-F_LOW)/float(NUM_F_SAMPLES);
-      for (unsigned int i = 0; i < NUM_F_SAMPLES; i++)
+      for (auto f : config->constant_fraction) 
       {
-        frequency[i] = F_LOW + f_step*float(i);
+        var_names.push_back(Form("LP%d_%d", i+1, (int)(100*f)));
       }
-    }
-
-    if ( verbose ) 
-    {
-      cout << "NUM_CHANNELS: " << NUM_CHANNELS << endl;
-      cout << "NUM_TIMES: " << NUM_TIMES << endl;
-      cout << "NUM_SAMPLES: " << NUM_SAMPLES << endl;
-      cout << "NUM_F_SAMPLES: " << NUM_F_SAMPLES << endl;
-      cout << "DAC_SCALE : " << DAC_SCALE << "\n";
-      cout << "DAC_RESOLUTION : " << DAC_RESOLUTION << "\n";
-    }
-
-    /*
-    ************************
-    SAVE PULSHAPES
-    ************************
-    */
-    if(save_meas)
-    {
-      tree->Branch("channel", &(channel[0][0]), Form("channel[%d][%d]/F", NUM_CHANNELS, NUM_SAMPLES));
-      tree->Branch("time", &(time[0][0]), Form("time[%d][%d]/F", NUM_TIMES, NUM_SAMPLES));
-      if ( NUM_F_SAMPLES > 0 )
+      for (auto thr : config->constant_threshold) 
       {
-        tree->Branch("channel_spectrum", &(channel_spectrum[0][0]), Form("channel_spectrum[%d][%d]/F", NUM_CHANNELS, NUM_F_SAMPLES));
-        tree->Branch("frequency", &(frequency[0]), Form("frequency[%d]/F", NUM_F_SAMPLES));
+        var_names.push_back(Form("LP%d_%dmV", i+1, (int)(fabs(thr))));
       }
     }
+  }
 
-    /*
-    **********************************
-    Obtain Algorithms from config file
-    **********************************
-    */
-    bool at_least_1_gaus_fit = false;
-    bool at_least_1_rising_edge = false;
-    int at_least_1_LP[3] = {false};
-    for(auto c : config->channels) 
+  if( at_least_1_gaus_fit ) 
+  {
+    var_names.push_back("gaus_mean");
+    var_names.push_back("gaus_sigma");
+    var_names.push_back("gaus_chi2");
+  }
+
+  if( at_least_1_rising_edge ) 
+  {
+    for (auto f : config->constant_fraction) 
     {
-      if( c.second.algorithm.Contains("G")) at_least_1_gaus_fit = true;
-      if( c.second.algorithm.Contains("Re")) at_least_1_rising_edge = true;
-      if( c.second.algorithm.Contains("LP1")) at_least_1_LP[0] = true;
-      if( c.second.algorithm.Contains("LP2")) at_least_1_LP[1] = true;
-      if( c.second.algorithm.Contains("LP3")) at_least_1_LP[2] = true;
+      var_names.push_back(Form("linear_RE_%d", (int)(100*f)));
     }
 
-    for(unsigned int i = 0; i< 3; i++) 
+    for (auto thr : config->constant_threshold) 
     {
-      if(at_least_1_LP[i]) 
-      {
-        for (auto f : config->constant_fraction) 
-        {
-          var_names.push_back(Form("LP%d_%d", i+1, (int)(100*f)));
-        }
-        for (auto thr : config->constant_threshold) 
-        {
-          var_names.push_back(Form("LP%d_%dmV", i+1, (int)(fabs(thr))));
-        }
-      }
+      var_names.push_back(Form("linear_RE__%dmV", (int)(fabs(thr))));
     }
-    /*
-    ************
-    Gaussian Fit
-    ************
-    */
-    if( at_least_1_gaus_fit ) 
-    {
-      var_names.push_back("gaus_mean");
-      var_names.push_back("gaus_sigma");
-      var_names.push_back("gaus_chi2");
-    }
-    /*
-    **********************
-    Linear Rising Edge Fit(good old stuff!)
-    **********************
-    */
-    if( at_least_1_rising_edge ) 
-    {
-      for (auto f : config->constant_fraction) {
-        var_names.push_back(Form("linear_RE_%d", (int)(100*f)));
-      }
+  }
 
-      for (auto thr : config->constant_threshold) {
-        var_names.push_back(Form("linear_RE__%dmV", (int)(fabs(thr))));
-      }
-    }
+  for (auto& ch : channelMap) 
+  {
+    const auto& chName = ch.first + "_";
 
-    /*
-    *******************************************************
-    // Create the tree branches an the associated variables
-    *******************************************************
-    */
-    if ( verbose ) { cout << "Initializing all tree variables" << endl; }
-    if (save_meas && verbose) 
+    for(const auto& vn : var_names)
     {
-      cout << "   channel\n   time" << endl;
+      TString n = chName + vn;
+      var[n] = float(-999.9);
+      tree->Branch(n, &var[n], n+"/F");
+      std::cout<<"New Variables: "<<n<<std::endl;
     }
-    for(TString n : var_names)
-    {
-      var[n] = new float[NUM_CHANNELS];
-      tree->Branch(n, &(var[n][0]), n+Form("[%d]/F", NUM_CHANNELS));
-      if( verbose ) { cout << "   " << n.Data() << endl; }
-    }
+  }
 
-    for(unsigned int i = 0; i < NUM_CHANNELS; i++) ResetVar(i);
-};
+  ResetVar();
+}
 
 int DRSAnalyzer::GetChannelsMeasurement(int i_aux) 
 {
@@ -788,35 +765,46 @@ int DRSAnalyzer::GetChannelsMeasurement(int i_aux)
   return 0;
 }
 
-void DRSAnalyzer::ResetVar(unsigned int n_ch) 
+void DRSAnalyzer::ResetVar() 
 {
-  for(auto n: var_names) 
+  for(auto& ch : channelMap) 
   {
-    var[n][n_ch] = 0;
+    const auto& chName = ch.first + "_";
+    for(const auto& vn : var_names) 
+    {
+      TString n = chName + vn;
+      var[n] = 0;
+    }
   }
 }
 
 void DRSAnalyzer::ResetAnalysisVariables() 
 {
-  for(unsigned int i=0; i<NUM_CHANNELS; i++) 
+  unsigned int i = 0;
+  for (auto& ch : channelMap) 
   {
+    const auto& chName = ch.first + "_";
+    // std::cout<<ch.second->size()<<std::endl;
+    auto& channel = *ch.second;
     for(unsigned int j=0; j<NUM_SAMPLES; j++) 
     {
-      channel[i][j] = 0;
-      if(i < NUM_TIMES) time[i][j] = 0;
+      // std::cout<<j<<" "<<channel.size()<<std::endl;
+      channel[j] = 0;
+      if(i < NUM_TIMES) time[j] = 0;
     }
+    i++;
   }
 }
 
-float DRSAnalyzer::GetPulseIntegral(float *a, float *t, unsigned int i_st, unsigned int i_stop) //returns charge in pC asssuming 50 Ohm termination
+float DRSAnalyzer::GetPulseIntegral(std::vector<float> a, std::vector<float> t, unsigned int i_st, unsigned int i_stop) //returns charge in pC asssuming 50 Ohm termination
 {
   //Simpson's Rule for equaled space with Cartwright correction for unequaled space
   float integral = 0.;
   for (unsigned int i=i_st; i < i_stop-2 ; i+=2) 
   {
-    float aux = ( 2-(t[i+2]-t[i+1])/(t[i+1]-t[i]) ) * a[i];
-    aux += (t[i+2]-t[i])*(t[i+2]-t[i])/((t[i+2]-t[i+1])*(t[i+1]-t[i])) * a[i+1];
-    aux += ( 2-(t[i+1]-t[i])/(t[i+2]-t[i+1]) ) * a[i+2];
+    float aux = ( 2-(t[i+2]-t[i+1])/(t[i+1]-t[i]) ) * a.at(i);
+    aux += (t[i+2]-t[i])*(t[i+2]-t[i])/((t[i+2]-t[i+1])*(t[i+1]-t[i])) * a.at(i+1);
+    aux += ( 2-(t[i+1]-t[i])/(t[i+2]-t[i+1]) ) * a.at(i+2);
 
     integral += ( (t[i+2]-t[i]) / 6.0 ) * aux;
   }
@@ -825,7 +813,7 @@ float DRSAnalyzer::GetPulseIntegral(float *a, float *t, unsigned int i_st, unsig
   return integral;
 }
 
-unsigned int DRSAnalyzer::GetIdxClosest(float value, float* v, unsigned int i_st, int direction) 
+unsigned int DRSAnalyzer::GetIdxClosest(float value, std::vector<float> v, unsigned int i_st, int direction) 
 {
   unsigned int idx_end = direction>0 ? NUM_SAMPLES-1 : 0;
   unsigned int i = i_st;
@@ -846,26 +834,26 @@ unsigned int DRSAnalyzer::GetIdxClosest(float value, float* v, unsigned int i_st
   return i_min;
 }
 
-unsigned int DRSAnalyzer::GetIdxFirstCross(float value, float* v, unsigned int i_st, int direction) 
+unsigned int DRSAnalyzer::GetIdxFirstCross(float value, std::vector<float> v, unsigned int i_st, int direction) 
 {
   unsigned int idx_end = direction>0 ? NUM_SAMPLES-1 : 0;
-  bool rising = value > v[i_st]? true : false; // Check if the given max value is greater than the given waveform amplitude at a given start time (i_st).
+  bool rising = value > v.at(i_st)? true : false; // Check if the given max value is greater than the given waveform amplitude at a given start time (i_st).
 
   // if it is: the value of the waveform needs to rise and otherwise it doesn't need so the function will return the i_st.
   unsigned int i = i_st;
   while( (i != idx_end)) 
   { // loop over the time bins
-    if(rising && v[i] > value) break; // check if the rising variable is true and if the waveform value is going higher than the given amplitude value. And stops the loop.
-    else if( !rising && v[i] < value) break; // check if the rising variable is false and if the waveform value is still lower than the given amplitude value. And stops the loop.
+    if(rising && v.at(i) > value) break; // check if the rising variable is true and if the waveform value is going higher than the given amplitude value. And stops the loop.
+    else if( !rising && v.at(i) < value) break; // check if the rising variable is false and if the waveform value is still lower than the given amplitude value. And stops the loop.
     i += direction; // Otherwise it moves to the next time bin.
   }
 
   return i;
 }
 
-void DRSAnalyzer::AnalyticalPolinomialSolver(unsigned int Np, float* in_x, float* in_y, unsigned int deg, float* &out_coeff, float* err) 
+void DRSAnalyzer::AnalyticalPolinomialSolver(unsigned int Np, float* in_x, float* in_y, unsigned int deg, float* &out_coeff) 
 {
-  if(deg <= 0 || deg>3) { cout << "[ERROR]: You don't need AnalyticalPolinomialSolver for this" << endl; exit(0);}
+  if(deg <= 0 || deg>3) { std::cout << "[ERROR]: You don't need AnalyticalPolinomialSolver for this" << std::endl; exit(0);}
   if(Np < deg+1) return;
 
   TVectorF x, x2, x3;
@@ -916,58 +904,16 @@ float DRSAnalyzer::PolyEval(float x, float* coeff, unsigned int deg)
   return out;
 }
 
-float DRSAnalyzer::WSInterp(float t, int N, float* tn, float* cn) 
+float DRSAnalyzer::WSInterp(float t, int N, std::vector<float> tn, std::vector<float> cn) 
 {
   float out = 0;
   float dt = (tn[0] - tn[N-1])/N;
   for(unsigned i = 0; i < N; i++) 
   {
     float x = (t - tn[i])/dt;
-    out += cn[i] * sin(3.14159265358 * x) / (3.14159265358 * x);
+    out += cn.at(i) * sin(3.14159265358 * x) / (3.14159265358 * x);
   }
   return out;
-};
-
-float DRSAnalyzer::FrequencySpectrum(double freq, double tMin, double tMax, int ich, int t_index)
-{
-	const int range = 0; // extension of samples to be used beyond [tMin, tMax]
-	double deltaT = (time[t_index][NUM_SAMPLES - 1] - time[t_index][0])/(double)(NUM_SAMPLES - 1); // sampling time interval
-	double fCut = 0.5/deltaT; // cut frequency = 0.5 * sampling frequency from WST
-	int n_min = floor(tMin/deltaT) - range; // first sample to use
-	int n_max = ceil(tMax/deltaT) + range; // last sample to use
-	n_min = std::max(n_min,0); // check low limit
-	n_max = std::min(n_max, (int)NUM_SAMPLES - 1); // check high limit
-	int n_0 = (n_min + n_max)/2;
-
-	TComplex s(0.,0.); // Fourier transform at freq
-	TComplex I(0.,1.); // i
-
-	for(int n = n_min; n <= n_max; n++)
-	{
-		s += deltaT*(double)channel[ich][n]*TComplex::Exp(-I*(2.*TMath::Pi()*freq*(n-n_0)*deltaT));//maybe don't need n_0 here, I think it will just add a phase to the fourier transform
-	}
-  return s.Rho();
-};
-
-float DRSAnalyzer::FrequencySpectrum(double freq, double tMin, double tMax, unsigned int n_samples, float* my_channel, float* my_time)
-{
-  const int range = 0;
-	double deltaT = (my_time[n_samples - 1] - my_time[0])/(double)(n_samples - 1);
-	double fCut = 0.5/deltaT;
-	int n_min = floor(tMin/deltaT) - range;
-	int n_max = ceil(tMax/deltaT) + range;
-	n_min = std::max(n_min,0);
-	n_max = std::min(n_max, (int)(n_samples - 1));
-	int n_0 = (n_min + n_max)/2;
-
-	TComplex s(0.,0.);
-	TComplex I(0.,1.);
-
-	for(int n = n_min; n <= n_max; n++)
-	{
-    s += deltaT*(double)my_channel[n]*TComplex::Exp(-I*(2.*TMath::Pi()*freq*(n-n_0)*deltaT));
-	}
-  return s.Rho();
 };
 
 std::string DRSAnalyzer::split(const std::string& half, const std::string& s, const std::string& h) const

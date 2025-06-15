@@ -63,10 +63,6 @@ void GetCommandLineArgs(int argc, char **argv, DRSAnalyzer& a)
     std::cout << "save raw" << std::endl;
   }
 
-  aux = ParseCommandLine( argc, argv, "save_meas" );
-  aux.ToLower();
-  if(aux == "true") a.save_meas = true;
-
   aux = ParseCommandLine( argc, argv, "draw_debug_pulses" );
   aux.ToLower();
   if(aux != "false" && aux != "") 
@@ -83,46 +79,39 @@ int main(int argc, char **argv)
   DRSAnalyzer a;
   GetCommandLineArgs(argc, argv, a);
 
-  a.file = new TFile(a.output_file_path.Data(), "RECREATE");
-  a.tree = new TTree("EventTree", "Digitized waveforms");
   a.file_in = new TFile(a.input_file_path,"READ");
+  a.file = new TFile(a.output_file_path.Data(), "RECREATE");
   a.tree_in = (TTree*)a.file_in->Get("EventTree");
-  
-  a.GetDim(a.tree_in, "channel", a.NUM_CHANNELS, a.NUM_SAMPLES);
-  a.GetDim(a.tree_in, "time", a.NUM_TIMES, a.NUM_SAMPLES);
-  for(unsigned int i = 0; i < a.NUM_CHANNELS; i++){a.active_ch.emplace_back(i);}
+  a.tree = new TTree("EventTree", "Digitized waveforms");
+
+  a.branches = a.tree_in->GetListOfBranches();
+
+  TPRegexp channelRegex("^DRS_Board[0-9]+_Group[0-9]+_Channel[0-9]+$");
+
+  for (unsigned int i = 0; i < a.branches->GetEntries(); ++i) 
+  {
+    auto* br = (TBranch*)a.branches->At(i);
+    const auto& name = br->GetName();
+
+    if (channelRegex.Match(name))
+    {
+      a.branch_names_DRS.emplace_back(name);
+      auto* vec = new std::vector<float>;
+      a.tree_in->SetBranchAddress(name, &vec);
+      a.channelMap[name] = vec;
+      std::cout<<"PulseShapes here: "<<name<<std::endl;
+    }
+    else
+    {
+      a.branch_names_OnlyCopy.emplace_back(name);
+    }
+  }
+
+  // std::sort(branch_names.begin(), branch_names.end());
 
   a.InitLoop();
-  a.tree_in->SetBranchAddress("event_n", &a.event_n);
-  a.tree_in->SetBranchAddress("channel", &(a.channel[0][0]));
-  a.tree_in->SetBranchAddress("time", &(a.time[0][0]));
-  a.tree_in->SetBranchAddress("timeoffsets", &(a.timeOffset[0]));
-  
-  a.tree->Branch("event_n", &a.event_n, "event_n/i");
-  a.tree->Branch("timeoffsets", &(a.timeOffset[0]), Form("timeoffsets[%d]/F", a.NUM_CHANNELS));
 
-  // // Get the list of branches
-  // TObjArray* branchList = tree_in->GetListOfBranches();
-
-  // std::vector<std::string> DRS_Channel_Names;
-
-  // std::cout << "Branches in tree:" << std::endl;
-  // for (int i = 0; i < branchList->GetEntries(); ++i) 
-  // {
-  //   TBranch* branch = (TBranch*)branchList->At(i);
-  //   std::string brName = std::string(branch->GetName());
-  //   if (brName.find("DRS") != std::string::npos && brName.find("Channel") != std::string::npos) 
-  //   {
-  //     DRS_Channel_Names.push_back(brName);
-  //   }
-  // }
-
-  // for(const auto& n : DRS_Channel_Names)
-  // {
-  //   std::cout<<n<<std::endl;
-  // }
-
-  unsigned int evt_progress_print_rate = a.verbose ? 100 : 1000;
+  unsigned int evt_progress_print_rate = a.verbose ? 1 : 1000;
   unsigned int N_written_evts = 0;
   int n_evt_tree = a.tree_in->GetEntries();
 
@@ -130,12 +119,18 @@ int main(int argc, char **argv)
   {
     if (i_aux % 500 == 0) std::cout << "Processing Event " << i_aux << "\n" << std::endl;
     a.GetChannelsMeasurement(i_aux);
+    // std::cout<<"made it here 1"<<std::endl;
     a.Analyze();
+    // std::cout<<"made it here 2"<<std::endl;
     a.tree->Fill();
+    // std::cout<<"made it here 3"<<std::endl;
     N_written_evts++;
     a.event_n++;
   }
+
   a.file->Write();
-  
+  a.file->Close();
+  a.file_in->Close();
+
   return 0;
 }
