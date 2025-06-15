@@ -6,11 +6,11 @@
 #include <string>
 #include <ctime>
 #include <unistd.h>
+#include <typeinfo>
 
 // SYS includes
 #include <sys/types.h>
 #include <sys/stat.h>
-#include <typeinfo>
 
 // ROOT INCLUDES
 #include "TFile.h"

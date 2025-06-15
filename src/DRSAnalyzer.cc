@@ -136,11 +136,11 @@ void DRSAnalyzer::Analyze()
     float Re_b, Re_slope;
     bool fittable = true;
     fittable *= idx_min < (int)(NUM_SAMPLES*0.8);
-    fittable *= fabs(amp) > 100 * baseline_RMS;
-    fittable *= fabs(channel[idx_min+1]) > 3*baseline_RMS;
-    fittable *= fabs(channel[idx_min-1]) > 3*baseline_RMS;
-    fittable *= fabs(channel[idx_min+2]) > 2*baseline_RMS;
-    fittable *= fabs(channel[idx_min-2]) > 2*baseline_RMS;
+    fittable *= fabs(amp) > 5 * baseline_RMS;
+    fittable *= fabs(channel[idx_min+1]) > 2*baseline_RMS;
+    fittable *= fabs(channel[idx_min-1]) > 2*baseline_RMS;
+    fittable *= fabs(channel[idx_min+2]) > 1*baseline_RMS;
+    fittable *= fabs(channel[idx_min-2]) > 1*baseline_RMS;
     // fittable *= fabs(channel[idx_min+3]) > 2*baseline_RMS;
     // fittable *= fabs(channel[idx_min-3]) > 2*baseline_RMS;
     
@@ -648,28 +648,28 @@ void DRSAnalyzer::InitLoop()
       if (typeName == "Int_t") {
           buffer = new Int_t;
           tree_in->SetBranchAddress(name, (Int_t*)buffer);
-          tree->Branch(name, (Int_t*)buffer, name + "/I");
+          tree->Branch(name, (Int_t*)buffer, name + "/I")->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
       } else if (typeName == "UInt_t") {
           buffer = new UInt_t;
           tree_in->SetBranchAddress(name, (UInt_t*)buffer);
-          tree->Branch(name, (UInt_t*)buffer, name + "/i");
+          tree->Branch(name, (UInt_t*)buffer, name + "/i")->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
       } else if (typeName == "ULong64_t") {
           buffer = new ULong64_t;
           tree_in->SetBranchAddress(name, (ULong64_t*)buffer);
-          tree->Branch(name, (ULong64_t*)buffer, name + "/l");
+          tree->Branch(name, (ULong64_t*)buffer, name + "/l")->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
       } else if (typeName == "Float_t") {
           buffer = new Float_t;
           tree_in->SetBranchAddress(name, (Float_t*)buffer);
-          tree->Branch(name, (Float_t*)buffer, name + "/F");
+          tree->Branch(name, (Float_t*)buffer, name + "/F")->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
       } else if (typeName == "Double_t") {
           buffer = new Double_t;
           tree_in->SetBranchAddress(name, (Double_t*)buffer);
-          tree->Branch(name, (Double_t*)buffer, name + "/D");
+          tree->Branch(name, (Double_t*)buffer, name + "/D")->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
       } else if (typeName.BeginsWith("vector")) {
           auto* vec = new std::vector<float>;
           buffer = vec;
           tree_in->SetBranchAddress(name, &vec);
-          tree->Branch(name, &vec);
+          tree->Branch(name, &vec)->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
       } else {
           std::cerr << "Unsupported type: " << typeName << " for branch " << name << std::endl;
           continue;
@@ -681,7 +681,7 @@ void DRSAnalyzer::InitLoop()
   for(auto& [name, channel] : channelMap) 
   {
     tree_in->SetBranchAddress(name, &channel);
-    tree->Branch(name, &channel);
+    tree->Branch(name, &channel)->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
   }
   tree_in->GetEntry(0);
 
@@ -748,7 +748,7 @@ void DRSAnalyzer::InitLoop()
     {
       TString n = chName + vn;
       var[n] = float(-999.9);
-      tree->Branch(n, &var[n], n+"/F");
+      tree->Branch(n, &var[n], n+"/F")->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
     }
   }
 }
@@ -836,47 +836,57 @@ unsigned int DRSAnalyzer::GetIdxFirstCross(float value, std::vector<float> v, un
   return i;
 }
 
-void DRSAnalyzer::AnalyticalPolinomialSolver(unsigned int Np, float* in_x, float* in_y, unsigned int deg, float* &out_coeff) 
+void DRSAnalyzer::AnalyticalPolinomialSolver(unsigned int Np, float* in_x, float* in_y, unsigned int deg, float*& out_coeff)
 {
-  if(deg <= 0 || deg>3) { std::cout << "[ERROR]: You don't need AnalyticalPolinomialSolver for this" << std::endl; exit(0);}
-  if(Np < deg+1) return;
+    if (deg <= 0 || deg > 3) {
+        std::cerr << "[ERROR]: You don't need AnalyticalPolinomialSolver for this\n";
+        out_coeff = nullptr;
+        return;
+    }
+    if (Np < deg + 1) {
+        std::cerr << "[WARNING]: Not enough points for requested polynomial degree\n";
+        out_coeff = nullptr;
+        return;
+    }
 
-  TVectorF x, x2, x3;
-  x.Use(Np, in_x);
+    TMatrixD A(Np, deg + 1);
+    for (unsigned int i = 0; i < Np; ++i) {
+        double x = in_x[i];
+        A(i, 0) = 1.0;
+        if (deg >= 1) A(i, 1) = x;
+        if (deg >= 2) A(i, 2) = x * x;
+        if (deg >= 3) A(i, 3) = x * x * x;
+    }
 
-  TVectorF y;
-  y.Use(Np, in_y);
+    TVectorD y(Np);
+    for (unsigned int i = 0; i < Np; ++i)
+        y[i] = in_y[i];
 
-  TMatrixF A(Np, deg+1);
+    TMatrixD At = TMatrixD(TMatrixD::kTransposed, A);
+    TMatrixD AtA = At * A;
+    TVectorD Aty = At * y;
 
-  TMatrixFColumn(A, 0) = 1.;
-  TMatrixFColumn(A, 1) = x;
+    // Suppress ROOT error messages
+    int oldErrorLevel = gErrorIgnoreLevel;
+    gErrorIgnoreLevel = kBreak;  // suppress all ROOT errors
 
-  float *in_x2 = new float[Np];
-  float *in_x3 = new float[Np];
-  if( deg >= 2 ) 
-  {
-    for(unsigned int i = 0; i < Np; i++) in_x2[i] = in_x[i]*in_x[i];
-    x2.Use(Np, in_x2);
-    TMatrixFColumn(A, 2) = x2;
-  }
-  if( deg >= 3 ) 
-  {
-    for(unsigned int i = 0; i < Np; i++) in_x3[i] = in_x2[i] * in_x[i];
-    x3.Use(Np, in_x3);
-    TMatrixFColumn(A, 3) = x3;
-  }
+    TDecompChol chol(AtA);
+    Bool_t ok;
+    TVectorD coeffs = chol.Solve(Aty, ok);
 
-  const TVectorD c_norm = NormalEqn(A,y);
+    // Restore original error level
+    gErrorIgnoreLevel = oldErrorLevel;
 
-  out_coeff = new float[deg+1];
-  for(unsigned int i = 0; i<= deg; i++) {
-    out_coeff[i] = c_norm[i];
-  }
+    out_coeff = new float[deg + 1];
 
-  delete [] in_x2;
-  delete [] in_x3;
-  return;
+    if (!ok) {
+        // std::cerr << "[WARNING]: Matrix not positive definite. Filling zeros.\n";
+        for (unsigned int i = 0; i <= deg; ++i)
+            out_coeff[i] = 0.0;
+    } else {
+        for (unsigned int i = 0; i <= deg; ++i)
+            out_coeff[i] = coeffs[i];
+    }
 }
 
 float DRSAnalyzer::PolyEval(float x, float* coeff, unsigned int deg) 
