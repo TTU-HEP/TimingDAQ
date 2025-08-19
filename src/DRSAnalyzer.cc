@@ -20,7 +20,8 @@ void DRSAnalyzer::Analyze()
     // Get the attenuation/amplification scale factor and convert ADC counts to mV
     //IMPORTANT: polarity is taking into account here! if negative it will switch the pulse
     //-------------------------------------------------------------------------------------
-    float scale_factor = (1.0 * DAC_SCALE / (float)DAC_RESOLUTION) * config->getChannelMultiplicationFactor(i);
+    // float scale_factor = (1.0 * DAC_SCALE / (float)DAC_RESOLUTION) * config->getChannelMultiplicationFactor(i);
+    float scale_factor = config->getChannelMultiplicationFactor(i);
     
     // ------- Get baseline ------
     unsigned int bl_st_idx = static_cast<unsigned int>((config->channels[i].baseline_time[0])*NUM_SAMPLES);
@@ -74,6 +75,37 @@ void DRSAnalyzer::Analyze()
       }
     }
     var[chName+"baseline"] = scale_factor * baseline;
+
+    // -------------- Global Time-offsets
+    double myTimeOffset = 0;
+    int channelShift = 0;
+    // We need to make the code smarter to handle time offsets
+    // if (correctForTimeOffsets) 
+    if (i == 8 || i == 17 || i == 26 || i == 35 || i == 44 || i == 53 || i == 62 || i == 71 || 
+      i == 80 || i == 89 || i == 98 || i == 107 || i == 116 || i == 125 || i == 134 || i == 143 || 
+      i == 152 || i == 161 || i == 170 || i == 179 || i == 188 || i == 197 || i == 206 || i == 215 || 
+      i == 224 || i == 233 || i == 242 || i == 251 || i == 260 || i == 269 || i == 278 || i == 287) 
+    {
+      // These channels are shifted by 100 samples
+      // This is a temporary solution, we need to make it more general
+      // std::cout<<n<<" "<<i<<std::endl;
+      // draw_debug_pulses = true;
+      channelShift = 150;
+
+      std::vector<float> channelNew(NUM_SAMPLES, baseline);    
+      if (channelShift < channel.size()) 
+      {
+          size_t copy_len = std::min(channel.size() - channelShift, (size_t)NUM_SAMPLES);
+          std::copy_n(channel.begin() + channelShift, copy_len, channelNew.begin());
+      }
+      channel = channelNew;
+      myTimeOffset = channelShift * 0.2; // 0.2 ns per sample
+    }
+    // else
+    // {
+    //   draw_debug_pulses = false;
+    // }
+
     // ------------- Get minimum position, max amplitude and scale the signal
     unsigned int idx_min = 0;
     float amp = 0;
@@ -144,12 +176,25 @@ void DRSAnalyzer::Analyze()
     // fittable *= fabs(channel[idx_min+3]) > 2*baseline_RMS;
     // fittable *= fabs(channel[idx_min-3]) > 2*baseline_RMS;
     
+    bool drsSpike =  fabs(channel[idx_min-1]) < baseline_RMS || fabs(channel[idx_min-1]) < 0.2*fabs(amp) ||
+                     fabs(channel[idx_min+1]) < baseline_RMS || fabs(channel[idx_min+1]) < 0.2*fabs(amp) ||
+                     fabs(channel[idx_min+2]) < baseline_RMS || fabs(channel[idx_min+2]) < 0.2*fabs(amp) ||
+                     fabs(channel[idx_min+3]) < baseline_RMS || fabs(channel[idx_min+3]) < 0.2*fabs(amp) ||
+                     fabs(channel[idx_min+4]) < baseline_RMS ||
+                     fabs(channel[idx_min+5]) < baseline_RMS || !fittable;
+
+    // if (abs(var[chName+"amp"]) > 10 && config->channels[i].polarity > 0 ) 
+    //   draw_debug_pulses = true;
+    // else
+    //   draw_debug_pulses = false;
+
     //-------------------------------------------------------------
     //If pulse is still positive change it automatically
     //-------------------------------------------------------------
     if( fittable  && !config->channels[i].algorithm.Contains("None")) 
     {
-      if( var[chName+"amp"] < 0 && config->channels[i].counter_auto_pol_switch > 0 ) 
+      // if( var[chName+"amp"] < 0 && config->channels[i].counter_auto_pol_switch > 0 ) 
+      if( config->channels[i].counter_auto_pol_switch > 0 ) 
       {
         config->channels[i].polarity *= -1;
         amp = -amp;
@@ -168,7 +213,9 @@ void DRSAnalyzer::Analyze()
         {
           std::cout << "[WARNING] Channel " << i << ": automatic polarity switched more than 10 times" << std::endl;
           std::cout << "[WARNING] Channel " << i << ": gonna keep inverting it for you. Better check your pulse polarity!!" << std::endl;
+          // draw_debug_pulses = true;
         }
+        // else draw_debug_pulses = false;
         config->channels[i].counter_auto_pol_switch ++;
       }
 
@@ -197,16 +244,6 @@ void DRSAnalyzer::Analyze()
       AnalyticalPolinomialSolver(j_10_post-j_90_post+1, &(time[j_90_post]), &(channel[j_90_post]), 1, coeff);
       var[chName+"decaytime"] = coeff[1];
       delete [] coeff;
-
-      /************************************
-      // -------------- Global Time-offsets
-      *************************************/
-      double myTimeOffset = 0;
-      // We need to make the code smarter to handle time offsets
-      // if (correctForTimeOffsets) 
-      // {
-      //   myTimeOffset = timeOffset[i];
-      // }
 
       /************************************
       // -------------- Do the gaussian fit
@@ -438,8 +475,9 @@ void DRSAnalyzer::Analyze()
       // Draw pulse
       pulse->SetMarkerStyle(4);
       pulse->SetMarkerSize(0.5);
-      pulse->GetYaxis()->SetTitle("Amplitude [mV]");
+      pulse->GetYaxis()->SetTitle("Amplitude [ADC]");
       pulse->GetXaxis()->SetTitle("Time [ns]");
+      // pulse->GetXaxis()->SetRangeUser(time[idx_min]-5, time[idx_min]+5);
       pulse->Draw("APE1");
       // Draw baseline
       line->SetLineWidth(1);
@@ -499,7 +537,7 @@ void DRSAnalyzer::Analyze()
         t_int->SetTextAlign(kHAlignLeft+kVAlignBottom);
         t_int->Draw();
 
-        TText* aNt = new TText(var[chName+"t_peak"]+3, amp+6, Form("LP2_50 = %1.2f, t peak = %1.2f,  amp =%1.2f ", var[chName+"LP2_50"], var[chName+"t_peak"], amp));
+        TText* aNt = new TText(var[chName+"t_peak"]+3, amp+6, Form("LP1_50 = %1.2f, t peak = %1.2f,  amp =%1.2f ", var[chName+"LP1_50"], var[chName+"t_peak"], amp));
         aNt->SetTextAlign(kHAlignLeft+kVAlignBottom);
         aNt->Draw();
 
@@ -571,7 +609,7 @@ void DRSAnalyzer::Analyze()
 
         // -------------- If exist, draw local polinomial fit
         unsigned int count = 0;
-        vector<int> frac_colors = {2, 6, 8, 5, 40, 46, 4, 9, 12};
+        vector<int> frac_colors = {2, 4, 6, 8, 40, 46, 9, 12};
         while(frac_colors.size() < config->constant_fraction.size() + config->constant_threshold.size()) 
         {
           frac_colors.push_back(2);
@@ -653,6 +691,9 @@ void DRSAnalyzer::InitLoop()
           buffer = new UInt_t;
           tree_in->SetBranchAddress(name, (UInt_t*)buffer);
           tree->Branch(name, (UInt_t*)buffer, name + "/i")->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
+      } else if (typeName == "UShort_t") {
+          buffer = new UShort_t;
+          tree_in->SetBranchAddress(name, (UShort_t*)buffer);
       } else if (typeName == "ULong64_t") {
           buffer = new ULong64_t;
           tree_in->SetBranchAddress(name, (ULong64_t*)buffer);
@@ -692,6 +733,7 @@ void DRSAnalyzer::InitLoop()
   // NUM_SAMPLES = channelMap.begin()->second->size();
   time = std::vector<float>(NUM_SAMPLES);
   for (unsigned int i = 0; i < NUM_SAMPLES; i++){ time[i] = (200.0 / 1000.0) * i; }
+  tree->Branch("time", &time)->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
 
   bool at_least_1_gaus_fit = false;
   bool at_least_1_rising_edge = false;

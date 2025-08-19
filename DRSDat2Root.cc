@@ -109,11 +109,11 @@ int main(int argc, char **argv)
   unsigned int N_written_evts = 0;
   int n_evt_tree = a.tree_in->GetEntries();
 
-    for(int i_aux = a.start_evt; i_aux < n_evt_tree && (a.N_evts==0 || i_aux<a.N_evts); i_aux++)
-    {
-      if (i_aux % 500 == 0) std::cout << "Processing Event " << i_aux << std::endl;
-      a.GetChannelsMeasurement(i_aux);
-      a.Analyze();
+  for(int i_aux = a.start_evt; i_aux < n_evt_tree && (a.N_evts==0 || i_aux<a.N_evts); i_aux++)
+  {
+    if (i_aux % 500 == 0) std::cout << "Processing Event " << i_aux << std::endl;
+    a.GetChannelsMeasurement(i_aux);
+    a.Analyze();
     a.tree->Fill();
     N_written_evts++;
     a.event_n++;
