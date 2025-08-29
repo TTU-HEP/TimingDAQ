@@ -682,7 +682,9 @@ void DRSAnalyzer::InitLoop()
       auto* leaf = br->GetLeaf(name);
       const TString& typeName = leaf->GetTypeName();
       void* buffer = nullptr;
-
+      void* in_buffer = nullptr;
+      void* out_buffer = nullptr;
+      
       if (typeName == "Int_t") {
           buffer = new Int_t;
           tree_in->SetBranchAddress(name, (Int_t*)buffer);
@@ -706,11 +708,6 @@ void DRSAnalyzer::InitLoop()
           buffer = new Double_t;
           tree_in->SetBranchAddress(name, (Double_t*)buffer);
           tree->Branch(name, (Double_t*)buffer, name + "/D")->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
-      } else if (typeName.BeginsWith("vector")) {
-          auto* vec = new std::vector<float>;
-          buffer = vec;
-          tree_in->SetBranchAddress(name, &vec);
-          tree->Branch(name, &vec)->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
       } else {
           std::cerr << "Unsupported type: " << typeName << " for branch " << name << std::endl;
           continue;
@@ -724,7 +721,7 @@ void DRSAnalyzer::InitLoop()
     tree_in->SetBranchAddress(name, &channel);
     tree->Branch(name, &channel)->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
   }
-  tree_in->GetEntry(0);
+//  tree_in->GetEntry(0);
 
   NUM_CHANNELS = channelMap.size();
   std::cout<<"Number of Channels: "<<NUM_CHANNELS<<std::endl;
@@ -817,10 +814,8 @@ void DRSAnalyzer::ResetVar()
 
 void DRSAnalyzer::ResetAnalysisVariables() 
 {
-  for (auto& ch : channelMap) 
-  {
-    ch.second->clear();
-  }
+  for (auto& ch : channelMap) {ch.second->clear();}
+  for (auto & ch : channelFERSUSMap) { ch.second->clear();}
 }
 
 float DRSAnalyzer::GetPulseIntegral(std::vector<float> a, std::vector<float> t, unsigned int i_st, unsigned int i_stop) //returns charge in pC asssuming 50 Ohm termination

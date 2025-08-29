@@ -100,6 +100,7 @@ class DRSAnalyzer {
 
         // Analysis variables
         std::map<TString, std::vector<float>*> channelMap;
+        std::map<TString, std::vector<unsigned short>*> channelFERSUSMap;
         std::vector<float> time;
 
         // Output tree vars

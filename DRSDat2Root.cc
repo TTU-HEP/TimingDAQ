@@ -90,12 +90,24 @@ int main(int argc, char **argv)
   {
     auto* br = (TBranch*)a.branches->At(i);
     const auto& name = br->GetName();
+    auto* leaf = br->GetLeaf(name);
+    const TString& typeName = leaf->GetTypeName();
 
+    
     if (channelRegex.Match(name))
     {
       auto* vec = new std::vector<float>;
       a.tree_in->SetBranchAddress(name, &vec);
       a.channelMap[name] = vec;
+    }
+    else if(TString(name).BeginsWith("FERS"))
+    {
+      if(typeName.Contains("unsigned short"))
+      {
+	auto* vec = new std::vector<unsigned short>;
+	a.tree_in->SetBranchAddress(name, &vec);
+	a.channelFERSUSMap[name] = vec;
+      }
     }
     else
     {
@@ -104,7 +116,7 @@ int main(int argc, char **argv)
   }
 
   a.InitLoop();
-
+  a.tree_in->GetEntry(0);  
   unsigned int evt_progress_print_rate = a.verbose ? 1 : 1000;
   unsigned int N_written_evts = 0;
   int n_evt_tree = a.tree_in->GetEntries();
