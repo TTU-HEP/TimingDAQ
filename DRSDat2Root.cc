@@ -100,13 +100,13 @@ int main(int argc, char **argv)
       a.tree_in->SetBranchAddress(name, &vec);
       a.channelMap[name] = vec;
     }
-    else if(TString(name).BeginsWith("FERS"))
+    else if(TString(name).BeginsWith("FERS") && typeName.Contains("vector"))
     {
       if(typeName.Contains("unsigned short"))
       {
-	auto* vec = new std::vector<unsigned short>;
-	a.tree_in->SetBranchAddress(name, &vec);
-	a.channelFERSUSMap[name] = vec;
+	      auto* vec = new std::vector<unsigned short>;
+	      a.tree_in->SetBranchAddress(name, &vec);
+	      a.channelFERSUSMap[name] = vec;
       }
     }
     else

@@ -721,6 +721,11 @@ void DRSAnalyzer::InitLoop()
     tree_in->SetBranchAddress(name, &channel);
     tree->Branch(name, &channel)->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
   }
+  for(auto& [name, channel] : channelFERSUSMap) 
+  {
+    tree_in->SetBranchAddress(name, &channel);
+    tree->Branch(name, &channel)->SetBasketSize(64 * 1024 * 1024); // Increase buffer size
+  }
 //  tree_in->GetEntry(0);
 
   NUM_CHANNELS = channelMap.size();

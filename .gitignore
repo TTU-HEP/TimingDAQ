@@ -20,3 +20,5 @@ automation/condor/cmd/*
 *.dSYM
 *.*~
 *#
+*.pdf
+.DS_Store
